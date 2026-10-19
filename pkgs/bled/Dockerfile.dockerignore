@@ -1,0 +1,6 @@
+# Only the control templates and maintainer scripts come from the producer
+# directory; binaries and the copyright file arrive through the bin and pkgs
+# build contexts.
+*
+!control/*.control
+!maintainer/**

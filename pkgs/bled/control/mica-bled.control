@@ -1,0 +1,13 @@
+Package: mica-bled
+Version: 0.0.1-1
+Source-Date-Epoch: 1792368000
+Architecture: @ARCH@
+Maintainer: mica build <mica@example.invalid>
+Section: admin
+Priority: optional
+Depends: passwd, ${shlibs:Depends}
+Description: Mica OS Bluetooth LE management service
+ Serves the Mica phone app over Bluetooth LE: authenticates a phone with the
+ device's PIN or its enrolled credential (SPAKE2) and forwards its network
+ requests to mica-apid. Carries a systemd unit and an OpenRC script and
+ enables neither: micad starts it when Bluetooth is enabled.

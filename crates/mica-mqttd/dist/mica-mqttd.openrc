@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+# mica-mqttd on an OpenRC root: mica-mqttd.service's counterpart. micad starts
+# it once it has written /run/mica/mqttd-device.env.
+
+description="mica MQTT bridge (publishes explicitly enrolled application item trees)"
+command=/usr/bin/mica-mqttd
+command_user="mica-mqttd:mica-mqttd"
+supervisor=supervise-daemon
+respawn_delay=5
+umask=077
+output_logger="logger -t mica-mqttd -p daemon.info"
+error_logger="logger -t mica-mqttd -p daemon.warn"
+
+depend() {
+    need micad
+    after net
+}
+
+start_pre() {
+    if [ ! -e /run/mica/mqttd-device.env ]; then
+        eerror "/run/mica/mqttd-device.env is absent: micad has not configured the bridge"
+        return 1
+    fi
+    MICA_MQTT_BROKER_HOST=localhost
+    MICA_MQTT_BROKER_PORT=1883
+    MICA_MQTT_CLIENT_ID=mica-mqttd
+    MICA_MQTT_MODE=read-only
+    # Both files are root's, on STATE and under /run, as the unit's
+    # EnvironmentFile= lines read them.
+    [ ! -r /var/lib/mica/mqttd.env ] || . /var/lib/mica/mqttd.env
+    . /run/mica/mqttd-device.env
+    command_args="--device-id ${MICA_MQTT_DEVICE_ID} --mode ${MICA_MQTT_MODE} --broker-host ${MICA_MQTT_BROKER_HOST} --broker-port ${MICA_MQTT_BROKER_PORT} --client-id ${MICA_MQTT_CLIENT_ID}"
+}

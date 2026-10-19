@@ -1,0 +1,71 @@
+[Unit]
+Description=mica MQTT broker (rumqttd, TCP only, MQTT 3.1.1)
+After=network.target micad.service
+Wants=micad.service
+
+# micad renders the configuration and then starts this unit. Without the file
+# there is nothing to bind and no way to learn what to bind, so a broker
+# started here could only exit. The condition makes "micad has not configured
+# me" a skipped start rather than a start that fails -- a skipped start is not
+# a failure, so it does not even reach the rate limit below.
+ConditionPathExists=/run/mica/mqtt-broker.toml
+
+# BOUND THE RESTART LOOP, because `Restart=on-failure` alone does not.
+#
+# systemd's defaults are DefaultStartLimitIntervalSec=10s with
+# DefaultStartLimitBurst=5. At RestartSec=5 only about two starts ever land
+# inside a 10-second window, so the burst is never reached and the limiter
+# never trips: a broker that fails for a persistent reason restarts every five
+# seconds forever, writing its error into the journal on STATE each time.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# WHAT IS NOT IN THIS FILE, AND WHY.
+# The listen address, the port and the auth flag are absent on purpose. The
+# root filesystem is an immutable dm-verity squashfs: a value written here
+# would be fixed at image build time and identical on every device flashed
+# with the image, and `systemctl edit` has nowhere to write. micad renders all
+# three from the `mqtt` settings subtree into /run/mica/mqtt-broker.toml before
+# it starts this unit, so the device's own configuration is the only source.
+ExecStart=/usr/bin/mica-mqtt-broker --config /run/mica/mqtt-broker.toml
+Restart=on-failure
+RestartSec=5
+
+# IDENTITY: a STATIC system user (uid = gid = 969), not DynamicUser.
+User=mica-mqtt-broker
+Group=mica-mqtt-broker
+
+# Sandboxing, as for mica-mqttd. This one listens rather than connects, which
+# makes it the only daemon in the image that accepts traffic it did not ask
+# for; it still owns no state beyond one file it reads, writes nothing, execs
+# nothing, and needs neither root nor any capability.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RemoveIPC=yes
+UMask=0077
+
+# The unit carries install information, and the image deliberately does not
+# create the symlink. mqtt.enabled is the master switch and micad owns the
+# lifecycle: it starts and stops this unit from the settings tree. A
+# multi-user.target.wants symlink baked into the image would start the broker
+# on every boot regardless of the switch, which is the one thing the switch
+# exists to prevent. The section is kept so that `systemctl enable` remains
+# meaningful to anyone debugging on a writable root.
+[Install]
+WantedBy=multi-user.target

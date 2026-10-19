@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# mica-mqtt-broker on an OpenRC root: mica-mqtt-broker.service's counterpart.
+# micad starts it once it has written /run/mica/mqtt-broker.toml.
+
+description="mica MQTT broker (rumqttd, TCP only, MQTT 3.1.1)"
+command=/usr/bin/mica-mqtt-broker
+command_args="--config /run/mica/mqtt-broker.toml"
+command_user="mica-mqtt-broker:mica-mqtt-broker"
+supervisor=supervise-daemon
+respawn_delay=5
+umask=077
+output_logger="logger -t mica-mqtt-broker -p daemon.info"
+error_logger="logger -t mica-mqtt-broker -p daemon.warn"
+
+depend() {
+    need micad
+    after net
+}
+
+start_pre() {
+    if [ ! -e /run/mica/mqtt-broker.toml ]; then
+        eerror "/run/mica/mqtt-broker.toml is absent: micad has not configured the broker"
+        return 1
+    fi
+}

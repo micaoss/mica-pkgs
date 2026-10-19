@@ -1,0 +1,21 @@
+name: ci
+# Every push to main and pull request runs the gates and builds, packs and
+# gates every package for amd64, arm64 and armhf (build.yml); nothing is published.
+# A change to docs or markdown alone builds nothing. workflow_dispatch runs the
+# same on a branch by hand, as a push that changes no file (a history rewrite)
+# starts no run.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**.md']
+  pull_request:
+    paths-ignore: ['docs/**', '**.md']
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml

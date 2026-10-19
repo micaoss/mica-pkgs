@@ -1,0 +1,12 @@
+[package]
+name = "mica-busname"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# No dependencies, deliberately: this is the one rule every consumer of a
+# `com.mica.*` name has to take, so taking it must cost nothing else.

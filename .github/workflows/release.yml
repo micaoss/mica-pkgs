@@ -1,0 +1,61 @@
+name: release
+# Runs only when a release is published; nothing here runs on a push. The
+# release is cut first with `gh release create <YYYYMMDD-HHMM> --target <commit
+# of main>`. The release's tag is gated, built, packed and gated for every
+# architecture (build.yml), then scripts/build/release.sh pushes those archives
+# as the pools ghcr.io/micaoss/mica-pkgs:pool.<arch>.<tag>, reads them back with
+# no credential, and attaches mica-pkgs.lock and SHA256SUMS to that release.
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: refs/tags/${{ github.event.release.tag_name }}
+  publish:
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mica-pkgs-*
+          path: _out/artifacts
+      # bin/mica-tools runs on the host's bun when it is the version the pinned
+      # checkout declares; its container route passes no registry token.
+      - name: The bun version of the pinned mica-build-tools
+        id: bun
+        run: |
+          set -euo pipefail
+          bin/mica-tools sync
+          echo "version=$(sed -n 's/^ *"packageManager": *"bun@\([^"]*\)".*/\1/p' repos/mica-build-tools/package.json)" >>"$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
+      - name: The gated archives of this run
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64 armhf; do
+            mkdir -p "_out/debs/$arch/pool"
+            cp "_out/artifacts/mica-pkgs-$arch/"*.deb "_out/debs/$arch/pool/"
+            bin/mica-tools pool index --arch "$arch"
+          done
+          rm -rf _out/artifacts
+          bash scripts/deb/package-gate.sh --no-reproduce
+      - name: Attach the archives and download them back anonymously
+        run: bash scripts/build/release.sh "$TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}

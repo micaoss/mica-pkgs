@@ -1,0 +1,58 @@
+#!/bin/sh
+# Create the pinned mica-mqtt-broker service account (uid/gid 969).
+#
+# So the check distinguishes the two: the pin already being in place is accepted
+# and does nothing, while the name or the uid being held by somebody ELSE is
+# still a failure that names what it found.
+set -e
+
+case "$1" in
+configure) ;;
+abort-upgrade | abort-remove | abort-deconfigure) exit 0 ;;
+*) echo "error: postinst called with unknown argument '$1'" >&2; exit 1 ;;
+esac
+
+NAME=mica-mqtt-broker
+ID=969
+COMMENT="mica MQTT broker"
+
+# The group first, because useradd --gid names it. Both halves of the pin are
+# checked -- the name and the numeric id -- because either can be taken
+# independently, and a check that looks at only one is blind to the other.
+group="$(awk -F: -v n="${NAME}" -v g="${ID}" '$1 == n || $3 == g' /etc/group)"
+if [ -z "${group}" ]; then
+    groupadd --system --gid "${ID}" "${NAME}"
+else
+    case "${group}" in
+    "${NAME}:x:${ID}:"*) ;;
+    *) echo "error: gid ${ID} or the group name ${NAME} is held by something else: ${group}" >&2; exit 1 ;;
+    esac
+fi
+
+passwd_entry="$(awk -F: -v n="${NAME}" -v u="${ID}" '$1 == n || $3 == u' /etc/passwd)"
+if [ -z "${passwd_entry}" ]; then
+    useradd --system --uid "${ID}" --gid "${ID}" --no-create-home \
+            --home-dir /nonexistent --shell /usr/sbin/nologin \
+            --comment "${COMMENT}" "${NAME}"
+else
+    # A second line here cannot match a single-line pattern, so a name and a uid
+    # held by two different accounts fails as loudly as one foreign account does.
+    case "${passwd_entry}" in
+    "${NAME}:x:${ID}:${ID}:"*":/nonexistent:/usr/sbin/nologin") ;;
+    *) echo "error: uid ${ID} or the name ${NAME} is held by another account: ${passwd_entry}" >&2; exit 1 ;;
+    esac
+fi
+
+# Unconditional, and not only on the path that created the account: the shadow
+# last-change field would otherwise be the build date, and the packed rootfs --
+# and therefore its dm-verity root hash -- must not change with the calendar.
+# Running it again writes the same value, which is what makes it safe to run on
+# an account that already exists.
+chage -d 2020-01-01 "${NAME}"
+
+entry="$(awk -F: -v n="${NAME}" '$1 == n' /etc/passwd)"
+case "${entry}" in
+"${NAME}:x:${ID}:${ID}:"*":/nonexistent:/usr/sbin/nologin") ;;
+*) echo "error: the ${NAME} passwd entry is not the pinned one: ${entry}" >&2; exit 1 ;;
+esac
+echo "${NAME} system account: ${entry}"

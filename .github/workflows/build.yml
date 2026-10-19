@@ -1,0 +1,148 @@
+name: build
+# Called by ci.yml and release.yml. The gates run once on amd64; every package
+# is then built, packed and gated for amd64 and arm64 on that architecture's own
+# runner (the Rust image compiles natively there, no emulation) and for armhf on
+# the amd64 runner (cross-compiled and packed in the amd64 images), kept as the
+# artifacts mica-pkgs-<arch>, and a final job gates every pool together. `ref`
+# is what every job checks out (release.yml passes the release's tag; empty is
+# the triggering commit).
+#
+# Caches only speed the build: every gate still runs. Each job restores the
+# third-party cargo artifacts and the cargo registry under a key made of
+# locks/mica-build-env.lock and the Cargo manifests and lock, so any change to
+# those misses. Only a push to main saves, after the workspace crates' own
+# artifacts are pruned (scripts/build/cache-prune.sh), so pull request and
+# release runs read what main wrote and never write.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - name: The locks against their releases
+        run: make deps
+      - name: Restore the dependency caches
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            _out/cargo/registry/index
+            _out/cargo/registry/cache
+            _out/cargo/git/db
+            _out/rust-gate
+          key: check-${{ runner.arch }}-${{ hashFiles('locks/mica-build-env.lock', 'Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml') }}
+      - name: Lint and the Rust gate
+        run: make check
+      - name: Prune the caches to third-party dependencies
+        if: github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+        run: sudo bash scripts/build/cache-prune.sh _out/rust-gate
+      - name: Save the dependency caches
+        if: github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            _out/cargo/registry/index
+            _out/cargo/registry/cache
+            _out/cargo/git/db
+            _out/rust-gate
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+  package:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+          - arch: armhf
+            runner: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
+    env:
+      MICA_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - name: The locks against their releases
+        run: make deps
+      - name: Restore the dependency caches
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            _out/cargo/registry/index
+            _out/cargo/registry/cache
+            _out/cargo/git/db
+            _out/target-deb
+          key: package-${{ matrix.arch }}-${{ hashFiles('locks/mica-build-env.lock', 'Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml') }}
+      - name: Every producer
+        run: make deb MICA_ARCH="$MICA_ARCH"
+      - name: Index the pool
+        run: bin/mica-tools pool index --arch "$MICA_ARCH"
+      - name: Gate, with a no-cache rebuild
+        run: bash scripts/deb/package-gate.sh --arch "$MICA_ARCH"
+      - name: Prune the caches to third-party dependencies
+        if: github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+        run: sudo bash scripts/build/cache-prune.sh _out/target-deb
+      - name: Save the dependency caches
+        if: github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            _out/cargo/registry/index
+            _out/cargo/registry/cache
+            _out/cargo/git/db
+            _out/target-deb
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mica-pkgs-${{ matrix.arch }}
+          path: _out/debs/${{ matrix.arch }}/pool/*.deb
+          if-no-files-found: error
+  gate:
+    needs: package
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mica-pkgs-*
+          path: _out/artifacts
+      - name: Gate over every architecture
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64 armhf; do
+            mkdir -p "_out/debs/$arch/pool"
+            cp "_out/artifacts/mica-pkgs-$arch/"*.deb "_out/debs/$arch/pool/"
+            bin/mica-tools pool index --arch "$arch"
+          done
+          bash scripts/deb/package-gate.sh --no-reproduce
+      - name: The package versions against the latest release
+        # Read-only: a package at its released version must keep its inputs and
+        # bytes (mica-tools pool guard). A release run compares with the release before it.
+        # The token only raises the rate limit of the release listing, which a
+        # runner's shared address exhausts when anonymous; nothing read needs it.
+        env:
+          REF: ${{ inputs.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          before=()
+          case "$REF" in refs/tags/*) before=(--before "${REF#refs/tags/}") ;; esac
+          for arch in amd64 arm64 armhf; do
+            for file in "_out/debs/$arch/pool/"*; do
+              bin/mica-tools pool guard "${before[@]}" "$arch" "$file"
+            done
+          done

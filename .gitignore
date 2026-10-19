@@ -1,0 +1,9 @@
+target/
+_out/
+# The source cache of mica-build-tools:docs/spec/release-lock.md section 5.
+/repos/
+
+# Repository-local scratch the packaging driver bind-mounts into containers,
+# and the agent sandbox's project-scoped throwaway directory.
+tmp/
+.tmp/

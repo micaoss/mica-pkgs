@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# bin/mica-tools: run the mica-build-tools commit this repository pins (mica-build-tools:docs/design.md 2.2).
+# This file is a byte-identical copy of mica-build-tools:bootstrap/mica-tools at the pinned commit;
+# `bin/mica-tools self-check` refuses a difference.
+#
+#   bin/mica-tools <group> <command> [arguments]   run it in the caller's working directory
+#   bin/mica-tools sync                            check out the pinned commit and run nothing
+#
+# 1. locks/mica-build-tools.pin is checked (mica-tools-pin v1; mica-build-tools:docs/spec/release-lock.md 4.2).
+# 2. repos/git/mica-build-tools.git, a bare mirror, is made to hold the commit, fetched from
+#    MICA_TOOLS_URL (default https://github.com/micaoss/mica-build-tools.git) when it does not;
+#    under MICA_OFFLINE=1 nothing is fetched and a miss is refused as offline-miss.
+# 3. repos/mica-build-tools/ is made a checkout of exactly that commit, reading its objects from the mirror.
+# 4. bun runs repos/mica-build-tools/src/cli.ts with MICA_REPO_ROOT set to the repository root. Bun is
+#    MICA_BUN, else bun on PATH at exactly the version the checkout declares, else the mica-build-env
+#    base image of locks/mica-build-env.lock, by digest, with the tree mounted at its own path.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIN="${ROOT}/locks/mica-build-tools.pin"
+MIRROR="${ROOT}/repos/git/mica-build-tools.git"
+CHECKOUT="${ROOT}/repos/mica-build-tools"
+URL="${MICA_TOOLS_URL:-https://github.com/micaoss/mica-build-tools.git}"
+
+refuse() { # <rule> <detail>
+    echo "refused $1"
+    echo "bin/mica-tools: refused $1: $2" >&2
+    exit 1
+}
+die() { echo "error: bin/mica-tools: $*" >&2; exit 1; }
+
+# 1. The pin: UTF-8, LF, a final LF, the header, then exactly REPOSITORY and COMMIT; comments after the header.
+[ -f "${PIN}" ] || die "${PIN} does not exist"
+[ -s "${PIN}" ] && [ "$(tail -c1 "${PIN}" | od -An -c | tr -d ' ')" = '\n' ] || refuse encoding "${PIN} has no final LF"
+! LC_ALL=C grep -q $'\r' "${PIN}" || refuse encoding "${PIN} carries a CR"
+! LC_ALL=C.UTF-8 grep -aqvx '.*' "${PIN}" 2>/dev/null || refuse encoding "${PIN} is not UTF-8"
+[ "$(head -n1 "${PIN}")" = '# mica-tools-pin v1' ] || refuse header "line 1 of ${PIN} is not '# mica-tools-pin v1'"
+body="$(tail -n +2 "${PIN}" | grep -v '^#' || true)"
+[ "$(printf '%s\n' "${body}" | cut -d= -f1 | tr '\n' ' ')" = 'REPOSITORY COMMIT ' ] ||
+    refuse pin-format "${PIN} must hold exactly REPOSITORY then COMMIT"
+repository="$(printf '%s\n' "${body}" | sed -n 's/^REPOSITORY=//p')"
+COMMIT="$(printf '%s\n' "${body}" | sed -n 's/^COMMIT=//p')"
+[ "${repository}" = mica-build-tools ] || refuse field-value "${PIN} names ${repository}, not mica-build-tools"
+[[ "${COMMIT}" =~ ^[0-9a-f]{40}$ ]] || refuse field-value "${PIN}: COMMIT is not 40 lowercase hex"
+
+command -v git >/dev/null 2>&1 || die "git is required"
+command -v flock >/dev/null 2>&1 || die "flock is required"
+mkdir -p "${ROOT}/repos/git"
+exec 9>"${ROOT}/repos/.mica-tools.lock"
+flock 9
+
+# 2. The mirror holds the commit.
+[ -d "${MIRROR}" ] || [ "${MICA_OFFLINE:-}" = 1 ] || git init --quiet --bare "${MIRROR}"
+if ! git --git-dir="${MIRROR}" cat-file -e "${COMMIT}^{commit}" 2>/dev/null; then
+    [ "${MICA_OFFLINE:-}" != 1 ] || refuse offline-miss "mica-build-tools ${COMMIT} (locks/mica-build-tools.pin) is not in ${MIRROR}"
+    git --git-dir="${MIRROR}" fetch --quiet "${URL}" "${COMMIT}" ||
+        die "fetching ${COMMIT} from ${URL} failed"
+    git --git-dir="${MIRROR}" cat-file -e "${COMMIT}^{commit}" 2>/dev/null || die "${URL} holds no commit ${COMMIT}"
+fi
+# A commit fetched by its id has no ref, and git gc prunes what no ref reaches; the pin keeps one.
+git --git-dir="${MIRROR}" update-ref "refs/pins/${COMMIT}" "${COMMIT}"
+
+# 3. The checkout is exactly the commit.
+if [ ! -d "${CHECKOUT}/.git" ] || [ "$(git -C "${CHECKOUT}" rev-parse HEAD 2>/dev/null)" != "${COMMIT}" ] ||
+    [ -n "$(git -C "${CHECKOUT}" status --porcelain 2>/dev/null)" ]; then
+    rm -rf "${CHECKOUT}"
+    git -c init.defaultBranch=main init --quiet "${CHECKOUT}"
+    printf '%s\n' "${MIRROR}/objects" >"${CHECKOUT}/.git/objects/info/alternates"
+    git -C "${CHECKOUT}" checkout --quiet --detach "${COMMIT}"
+fi
+[ "$(git -C "${CHECKOUT}" rev-parse HEAD)" = "${COMMIT}" ] || die "${CHECKOUT} is not at ${COMMIT}"
+exec 9>&-
+
+[ "${1:-}" != sync ] || { [ "$#" -eq 1 ] || { echo "usage: bin/mica-tools sync" >&2; exit 2; }; exit 0; }
+
+# 4. Bun, and the run.
+export MICA_REPO_ROOT="${ROOT}"
+want="$(sed -n 's/^ *"packageManager": *"bun@\([^"]*\)".*/\1/p' "${CHECKOUT}/package.json")"
+[ -n "${want}" ] || die "${CHECKOUT}/package.json declares no bun version"
+if [ -n "${MICA_BUN:-}" ]; then
+    exec "${MICA_BUN}" "${CHECKOUT}/src/cli.ts" "$@"
+fi
+if command -v bun >/dev/null 2>&1; then
+    got="$(bun --version)"
+    [ "${got}" = "${want}" ] || die "bun on PATH is ${got}; mica-build-tools ${COMMIT} runs on bun ${want} (set MICA_BUN, or install ${want})"
+    exec bun "${CHECKOUT}/src/cli.ts" "$@"
+fi
+LOCK="${ROOT}/locks/mica-build-env.lock"
+[ -f "${LOCK}" ] || die "no bun on PATH, and no ${LOCK} to take the mica-build-env base image from"
+image="$(awk -F'\t' '$1 == "image" && $2 == "mica-build-env" && $3 == "base" && $4 == "index" { print $5 }' "${LOCK}")"
+[[ "${image}" == *@sha256:* ]] && [ "$(printf '%s\n' "${image}" | wc -l)" -eq 1 ] ||
+    die "${LOCK} names no one mica-build-env base index by digest"
+case "${PWD}/" in "${ROOT}/"*) ;; *) die "the container route runs inside ${ROOT}, and the working directory ${PWD} is outside it" ;; esac
+# As the caller, not root: what the run writes under repos/ and _out/ stays the caller's to read and remove.
+exec docker run --rm -i --user "$(id -u):$(id -g)" -e HOME=/tmp -v "${ROOT}:${ROOT}" -w "${PWD}" \
+    -e MICA_REPO_ROOT -e MICA_OFFLINE -e CI -e GITHUB_ACTIONS \
+    "${image}" bun "${CHECKOUT}/src/cli.ts" "$@"

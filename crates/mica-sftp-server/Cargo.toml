@@ -1,0 +1,25 @@
+[package]
+name = "mica-sftp-server"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The SFTP v3 wire format (packet types, attribute encoding). Only the
+# `protocol` module is used: the serving loop is this crate's own, so framing
+# errors end the process instead of being logged and looped over.
+russh-sftp = { workspace = true }
+# `Packet` decodes from and encodes to `bytes::Bytes`; already in the graph
+# through russh-sftp.
+bytes = { workspace = true }
+# Local-time dates in the `ls -l` long names, as OpenSSH's sftp-server prints.
+chrono = { workspace = true }
+# utimensat(2) on a path, which std offers only through an open file.
+rustix = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

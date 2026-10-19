@@ -1,0 +1,12 @@
+Package: mica-mqtt-broker
+Version: 0.0.1-1
+Source-Date-Epoch: 1792368000
+Architecture: @ARCH@
+Maintainer: mica build <mica@example.invalid>
+Section: admin
+Priority: optional
+Depends: passwd, ${shlibs:Depends}
+Description: Mica OS local MQTT broker
+ An MQTT 3.1.1 broker configured by micad from the mqtt settings. Carries a
+ systemd unit and an OpenRC script and enables neither: micad starts it when
+ MQTT is enabled, after writing its configuration.

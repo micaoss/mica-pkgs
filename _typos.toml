@@ -1,0 +1,11 @@
+# typos: what reads as a misspelling here and is not.
+
+[default]
+extend-ignore-re = [
+    # Hex digests, ids and hashes.
+    "\\b[0-9a-f]{8,}\\b",
+]
+
+[default.extend-words]
+# shadow's chage(1).
+chage = "chage"

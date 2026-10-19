@@ -1,0 +1,4 @@
+# mica-lock v1
+# mica-pkgs pins no third-party archive or git tree: Cargo.lock holds the
+# language dependencies, and third-party images come from the upstream rows of
+# locks/mica-build-env.lock.

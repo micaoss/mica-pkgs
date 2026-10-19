@@ -1,0 +1,86 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace.lints.rust]
+# Every warn-by-default lint, now and in future toolchains, is an error: the policy
+# lives here, so local builds and the gate see the same rules.
+warnings = { level = "deny", priority = -2 }
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# A runtime path never panics: unwrap, expect and panic are for tests (clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[workspace.dependencies]
+# The `com.mica.*` bus-name rule (docs/mica-pkgs.md section 3.5).
+mica-busname = { path = "crates/mica-busname" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy", "tracing"] }
+tracing = "0.1"
+# env-filter, so RUST_LOG still works. It pulls in regex, and that is the right
+# trade on a device with no shell and no package manager: the log is the only
+# way to see what a daemon did, and a fixed compile-time level means a field
+# problem cannot be looked at more closely without a new image.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+clap = { version = "4", features = ["derive"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+rustix = { version = "1", features = ["fs"] }
+# rumqttc without default features is TCP-only: no TLS, and every remaining
+# dependency is pure Rust. The `use-rustls` default would pull tokio-rustls in;
+# TLS to the broker is a later decision.
+rumqttc = { version = "0.25", default-features = false }
+# The broker, used as a library rather than as its own daemon. Defaults off
+# buys three things: TCP only, so no `use-rustls` and therefore no rustls 0.22
+# with its live advisory; no websockets; and every remaining dependency pure
+# Rust. That last one is the reason this is here at all instead of Debian's
+# mosquitto, which would drag libcjson1, libmosquitto1, libdlt2 and
+# libwebsockets19t64 into a root filesystem that has no package manager to
+# maintain them.
+rumqttd = { version = "0.20", default-features = false }
+# The SFTP v3 wire format for mica-sftp-server, the `/usr/lib/sftp-server`
+# dropbear execs for the sftp subsystem. Pure Rust; `bytes` is the buffer type
+# its packets decode from and encode to.
+russh-sftp = "3.0.0"
+bytes = "1"
+# mica-bled's SPAKE2 (RFC 9382) and session: P-256, SHA-2, HKDF, HMAC and
+# ChaCha20-Poly1305 from RustCrypto, pure Rust; getrandom for the scalars and
+# the phone credentials.
+p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
+sha2 = { version = "0.11", default-features = false }
+hkdf = "0.13"
+hmac = "0.13"
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+getrandom = "0.4"
+base64 = "0.23"
+# mica-bled's HTTP/1.1 client for mica-apid on loopback: no TLS, no pool.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+
+# Every shipped executable is stripped: nothing on a device reads a symbol
+# table. A backtrace from a device is resolved against an unstripped build of
+# the same commit, which is reproducible. Whole-program LTO in one codegen unit
+# removes what no executable reaches across crates, at the cost of a longer
+# release build, and the optimisation level favours size over speed.
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"

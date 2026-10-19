@@ -1,0 +1,11 @@
+Package: mica-sftp-server
+Version: 0.0.1-1
+Source-Date-Epoch: 1792368000
+Architecture: @ARCH@
+Maintainer: mica build <mica@example.invalid>
+Section: net
+Priority: optional
+Depends: ${shlibs:Depends}
+Description: Mica OS SFTP server
+ The SFTP version 3 server dropbear runs for the sftp subsystem, as the
+ logged-in user.

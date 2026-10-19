@@ -1,0 +1,26 @@
+[package]
+name = "mica-mqtt-broker"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+rumqttd = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+# The connect test starts the broker on a real port and speaks MQTT to it.
+# rumqttc is the same client mica-mqttd uses, which is the point: the test
+# fails for exactly the reason the bridge would have failed.
+rumqttc = { workspace = true }
+mica-mqttd = { path = "../mica-mqttd" }
+tempfile = { workspace = true }
