@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 die() { echo "build-deb.sh: error: $*" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || die "docker is required"
 
-ALL_BINARIES=(mica-mqttd mica-mqtt-broker mica-sftp-server mica-bled)
+ALL_BINARIES=(mica-mqttd mica-mqtt-broker mica-sftp-server)
 PRODUCER="" BINS="" ARCH="" STAGE=""
 while [ "$#" -gt 0 ]; do
     case "$1" in

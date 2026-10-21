@@ -59,20 +59,6 @@ rumqttd = { version = "0.20", default-features = false }
 # its packets decode from and encode to.
 russh-sftp = "3.0.0"
 bytes = "1"
-# mica-bled's SPAKE2 (RFC 9382) and session: P-256, SHA-2, HKDF, HMAC and
-# ChaCha20-Poly1305 from RustCrypto, pure Rust; getrandom for the scalars and
-# the phone credentials.
-p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
-sha2 = { version = "0.11", default-features = false }
-hkdf = "0.13"
-hmac = "0.13"
-chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
-getrandom = "0.4"
-base64 = "0.23"
-# mica-bled's HTTP/1.1 client for mica-apid on loopback: no TLS, no pool.
-hyper = { version = "1", features = ["client", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
-http-body-util = "0.1"
 
 # Every shipped executable is stripped: nothing on a device reads a symbol
 # table. A backtrace from a device is resolved against an unstripped build of

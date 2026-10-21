@@ -1,4 +1,0 @@
-/com/mica/bled/advertisement0 org.bluez.LEAdvertisement1 {"Discoverable": b true, "Includes": as [s "local-name"], "ServiceUUIDs": as [s "ab725d4b-fef6-4311-99ec-a26c3139fc13"], "Type": s "peripheral"}
-/com/mica/bled/service0 org.bluez.GattService1 {"Primary": b true, "UUID": s "ab725d4b-fef6-4311-99ec-a26c3139fc13"}
-/com/mica/bled/service0/rx org.bluez.GattCharacteristic1 {"Flags": as [s "write", s "write-without-response"], "Service": o "/com/mica/bled/service0", "UUID": s "95468405-fe96-45be-9ea0-769fc0e27237"}
-/com/mica/bled/service0/tx org.bluez.GattCharacteristic1 {"Flags": as [s "notify"], "Service": o "/com/mica/bled/service0", "UUID": s "29358014-0d71-4c66-9a54-49c3943742ea", "Value": ay []}

@@ -12,7 +12,6 @@ contract with micad, and how the repository is built, checked and released.
 | `micaoss/mica-build-env` | The build images, pinned by `locks/mica-build-env.lock` | The Rust image compiles and gates; the base image packs, so `${shlibs:Depends}` resolves against the pinned Debian; armhf has no image of its own and is packed in the amd64 C image, against its cross toolchain |
 | `micaoss/mica-system-base` | The floor root and both inits | The packages run on it: `passwd` for the service accounts, D-Bus, systemd or OpenRC with `supervise-daemon`, and dropbear (`mica-ssh`) for SFTP |
 | `micaoss/mica-core` | micad, the API and the console | micad writes the MQTT configuration and starts both MQTT services by name (section 3) |
-| `micaoss/mica-app` | The phone app and `docs/protocol.md`, the BLE management protocol | `mica-bled` is the device side of that protocol (section 3.6) |
 | `micaoss/mica-build` | Boards, products and the signed images | Pins a release of this repository and installs its packages, by name, into the roots of the products that select them |
 
 ## 2. Packages
@@ -23,7 +22,6 @@ Every package is built for amd64, arm64 and armhf.
 | --- | --- | --- | --- | --- | --- |
 | `mica-mqtt-broker` | `pkgs/mqtt` | `/usr/bin/mica-mqtt-broker`, the local MQTT 3.1.1 broker | `mica-mqtt-broker.service` | `/etc/init.d/mica-mqtt-broker` | By micad, when MQTT is on |
 | `mica-mqttd` | `pkgs/mqtt` | `/usr/bin/mica-mqttd`, the application-data bridge to MQTT, and the empty directory `/usr/lib/mica/mqtt-applications.d` | `mica-mqttd.service` | `/etc/init.d/mica-mqttd` | By micad, when MQTT is on |
-| `mica-bled` | `pkgs/bled` | `/usr/bin/mica-bled`, the BLE management service, and its D-Bus policy `/usr/share/dbus-1/system.d/mica-bled.conf` | `mica-bled.service` | `/etc/init.d/mica-bled` | By micad, when Bluetooth is on |
 | `mica-sftp-server` | `pkgs/sftp` | `/usr/lib/sftp-server`, SFTP version 3 | -- | -- | By dropbear, per `sftp` subsystem request |
 
 Each package also installs `/usr/share/doc/<package>/copyright`.
@@ -39,20 +37,13 @@ Each package also installs `/usr/share/doc/<package>/copyright`.
   protocol is a pure state machine (`crates/mica-mqttd/src/bridge.rs`) between a transport and
   the application buses. Its postinst creates the system account `mica-mqttd` (uid and gid 970),
   which the service runs as.
-- **mica-bled** serves mica-app over Bluetooth LE through BlueZ (section 3.6). A phone
-  authenticates with SPAKE2 over the device's PIN or over a credential the service issued it,
-  then sends mica-apid requests over the sealed session; only the network routes of the
-  protocol's section 7.1 are forwarded. One phone at a time; failed attempts back off
-  device-wide. Its postinst creates the system account `mica-bled` (uid and gid 971), which the
-  service runs as.
 - **mica-sftp-server** is exec'd by dropbear for the `sftp` subsystem and runs as the logged-in
   user. It speaks SFTP version 3 on its standard input and output, uses no other Mica code, and
   has no configuration and no service.
 
 ## 3. The contract with micad
 
-micad owns the `mqtt` and `bluetooth` settings and the lifecycle of the MQTT services and
-`mica-bled`. The packages own the
+micad owns the `mqtt` settings and the lifecycle of the MQTT services. The packages own the
 executables, the service files and the formats below. A change to any of this needs both sides.
 
 ### 3.1 `/run/mica/mqtt-broker.toml`
@@ -162,49 +153,11 @@ com.mica.<class>[.<suffix>]
 The crate has no dependencies and is not published. micad carries its own copy of the rule with
 the same tests; the two must give the same answer for every name.
 
-### 3.6 `mica-bled`
-
-The protocol is `mica-app:docs/protocol.md`. What micad provides before it starts the service,
-when `bluetooth.enabled` is true:
-
-- `/run/mica/bled.env`, read as a systemd `EnvironmentFile=` and sourced by the OpenRC script,
-  holding exactly two assignments without quoting:
-
-  ```sh
-  MICA_BLED_DEVICE_ID=<deviceId>
-  MICA_BLED_APID=/run/mica/apid.sock
-  ```
-
-  `<deviceId>` is micad's device id in lowercase hex, SPAKE2's identity B. `MICA_BLED_APID` is
-  mica-apid's local socket.
-- On that socket, apid knows the caller by its uid (`SO_PEERCRED`) and lets the user `mica-bled`
-  call exactly `GET /api/v1/bluetooth` (the `pin` field), `PUT /api/v1/settings/bluetooth.pin`
-  (a JSON string, six digits, not `000000`) and the routes of the protocol's section 7.1, under
-  `/api`. The socket admits the `mica-bled` group. No credential is sent.
-
-The service keeps the phone credentials in `/var/lib/mica-bled/phones.json` (mode 0600; the
-directory is created by the unit's `StateDirectory=` and the OpenRC script's `checkpath`). The
-device name it reports is the BlueZ adapter's alias, which micad sets. The failure backoff is in
-memory: a restart of the service resets it.
-
-| | |
-| --- | --- |
-| systemd unit | `mica-bled.service` |
-| OpenRC service | `mica-bled` |
-| Runs as | `mica-bled` |
-| Needs before start | `/run/mica/bled.env` |
-
-As for the MQTT services, the package enables nothing, the unit's `ConditionPathExists=` skips a
-start without the file and `start_pre` fails it; the service is ordered after micad and
-`bluetooth` and restarts after a failure with a delay of 5 seconds. When bluetoothd leaves the
-bus the service exits and is restarted.
-
 ## 4. The repository
 
 | Path | Content |
 | --- | --- |
 | `crates/mica-mqtt-broker`, `crates/mica-mqttd` | The broker and the bridge; `dist/` holds each service's systemd unit and OpenRC script |
-| `crates/mica-bled` | The BLE management service; `dist/` holds its systemd unit, OpenRC script and D-Bus policy; `tests/vectors.json` is mica-app's `test/protocol/vectors.json`, kept byte-identical |
 | `crates/mica-sftp-server` | The SFTP server |
 | `crates/mica-busname` | The `com.mica.*` name rule |
 | `pkgs/<producer>/` | One producer per directory: `mica-inputs` (its packages and what decides their bytes), `producer.env`, `control/<package>.control`, `prepare.sh`, `Dockerfile`, and `maintainer/<package>/` for maintainer scripts |

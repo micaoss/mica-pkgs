@@ -1,6 +1,6 @@
 Package: mica-mqttd
-Version: 0.0.1-1
-Source-Date-Epoch: 1792368000
+Version: 0.0.1-2
+Source-Date-Epoch: 1792540800
 Architecture: @ARCH@
 Maintainer: mica build <mica@example.invalid>
 Section: admin

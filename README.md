@@ -20,11 +20,10 @@ Building and publishing run on [mica-build-tools](https://github.com/micaoss/mic
 | --- | --- | --- |
 | `mica-mqtt-broker` | amd64, arm64, armhf | A local MQTT 3.1.1 broker, started by micad |
 | `mica-mqttd` | amd64, arm64, armhf | The bridge from enrolled `com.mica.*` applications to MQTT, started by micad |
-| `mica-bled` | amd64, arm64, armhf | The Bluetooth LE management service for the Mica phone app, started by micad |
 | `mica-sftp-server` | amd64, arm64, armhf | SFTP version 3 for dropbear's `sftp` subsystem |
 
 Each package carries the start-up files of its own services, for systemd and OpenRC, and enables
-none: micad starts the MQTT daemons and `mica-bled`, and dropbear runs the SFTP server per session.
+none: micad starts the MQTT daemons, and dropbear runs the SFTP server per session.
 
 ## Releases
 
@@ -80,7 +79,6 @@ make package-gate          # the package rules, including a byte-identical rebui
 | Path | Content |
 | --- | --- |
 | `crates/mica-mqttd`, `crates/mica-mqtt-broker` | The MQTT bridge and broker |
-| `crates/mica-bled` | The BLE management service |
 | `crates/mica-sftp-server` | The SFTP server |
 | `crates/mica-busname` | The `com.mica.*` name rule |
 | `crates/*/dist` | Each service's systemd unit and OpenRC script |

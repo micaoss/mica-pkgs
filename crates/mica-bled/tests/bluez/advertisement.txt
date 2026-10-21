@@ -1,1 +1,0 @@
-{"Discoverable": b true, "Includes": as [s "local-name"], "ServiceUUIDs": as [s "ab725d4b-fef6-4311-99ec-a26c3139fc13"], "Type": s "peripheral"}
