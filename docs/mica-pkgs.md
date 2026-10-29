@@ -46,10 +46,10 @@ Each package also installs `/usr/share/doc/<package>/copyright`.
 micad owns the `mqtt` settings and the lifecycle of the MQTT services. The packages own the
 executables, the service files and the formats below. A change to any of this needs both sides.
 
-### 3.1 `/run/mica/mqtt-broker.toml`
+### 3.1 `/var/lib/mica/mqtt/broker.toml`
 
-The broker's configuration, read once at start (`--config`). micad renders it before it starts
-the broker; the file is world-readable, since the broker reads it as `mica-mqtt-broker`. It is
+The broker's configuration, read once at start (`--config`). micad renders it on DATA before it
+starts the broker, so the broker starts at boot as last configured; the file is world-readable, since the broker reads it as `mica-mqtt-broker`. It is
 TOML with exactly three keys, all required:
 
 ```toml
@@ -80,7 +80,7 @@ An absent file, or one without the table, is no accounts: every connection is re
 file lists one. With `auth_enabled = false` the file is not read. Listening on an address that is
 not loopback without authentication is allowed and logged as a warning.
 
-### 3.2 `/run/mica/mqttd-device.env`
+### 3.2 `/var/lib/mica/mqtt/mqttd-device.env`
 
 The bridge's identity, written by micad before it starts the bridge. It holds one assignment:
 
@@ -107,16 +107,19 @@ bridge connects anonymously, and a malformed file or one readable by others refu
 | systemd unit | `mica-mqtt-broker.service` | `mica-mqttd.service` |
 | OpenRC service | `mica-mqtt-broker` | `mica-mqttd` |
 | Runs as | `mica-mqtt-broker` | `mica-mqttd` |
-| Needs before start | `/run/mica/mqtt-broker.toml` | `/run/mica/mqttd-device.env` |
+| Needs before start | `/var/lib/mica/mqtt/broker.toml` | `/var/lib/mica/mqtt/mqttd-device.env` |
 
 - **The packages enable neither.** No package ships a `multi-user.target.wants` link or a
   runlevel link (`ENABLEMENT` in `pkgs/mqtt/producer.env` is 0 for both, and the package gate
-  holds the archives to it). micad starts and stops both services from the `mqtt` settings.
+  holds the archives to it). micad starts and stops both services from the `mqtt` settings, and
+  saves their enablement on DATA, from which Base's `mica-units` starts them at boot, with or
+  without micad.
 - Without its file a service does not run: on systemd the unit's `ConditionPathExists=` skips the
   start, on OpenRC `start_pre` fails it.
-- Both are ordered after micad and the network (`After=network.target micad.service` and
-  `Wants=micad.service`; `need micad` and `after net`), and both restart after a failure with a
-  delay of 5 seconds: `Restart=on-failure`, and `supervise-daemon` with `respawn_delay=5`.
+- Both are ordered after micad and the network and need DATA mounted, none of them needing micad
+  itself (`After=network.target micad.service`, `Wants=micad.service` and
+  `RequiresMountsFor=/var/lib/mica`; `need mica-mounts`, the bridge also `need mica-dbus`, and
+  `after net micad`), and both restart after a failure with a delay of 5 seconds: `Restart=on-failure`, and `supervise-daemon` with `respawn_delay=5`.
 - Under OpenRC both log through `logger`, tagged with the service name.
 
 ### 3.4 `/usr/lib/mica/mqtt-applications.d/`

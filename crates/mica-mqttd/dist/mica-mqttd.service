@@ -2,9 +2,13 @@
 Description=mica MQTT bridge (publishes explicitly enrolled application item trees)
 After=network.target micad.service
 Wants=micad.service
-# micad renders this before starting the bridge. A missing identity skips the
-# unit instead of making mqttd invent one or call back into micad.
-ConditionPathExists=/run/mica/mqttd-device.env
+# The identity is on DATA.
+RequiresMountsFor=/var/lib/mica
+# micad renders this before starting the bridge; at boot Base's mica-units
+# starts it while micad has it enabled, with or without micad. A missing
+# identity skips the unit instead of making mqttd invent one or call back into
+# micad.
+ConditionPathExists=/var/lib/mica/mqtt/mqttd-device.env
 
 [Service]
 Type=simple
@@ -24,9 +28,9 @@ EnvironmentFile=-/var/lib/mica/mqttd.env
 # with {"username":"<enrolled user>","password":"<matching password>"}.
 # Own it by mica-mqttd:mica-mqttd at 0600. Absence selects anonymous MQTT;
 # a malformed or publicly readable file refuses startup. No secret is in argv.
-# Root-rendered, one-purpose runtime input. It carries only the topic identity
-# and is deliberately separate from the management settings document.
-EnvironmentFile=/run/mica/mqttd-device.env
+# Root-rendered, one-purpose input. It carries only the topic identity and is
+# deliberately separate from the management settings document.
+EnvironmentFile=/var/lib/mica/mqtt/mqttd-device.env
 
 # Read-only by default: the bridge is a data publisher unless someone
 # deliberately makes it a control path (MICA_MQTT_MODE=full carries W topics

@@ -1,7 +1,7 @@
 //! `mica-mqtt-broker` — the MQTT broker the device serves locally.
 //!
 //! This is rumqttd used as a library, not as its own daemon. It reads the
-//! three-key file micad renders into `/run/mica/mqtt-broker.toml`, builds a
+//! three-key file micad renders into `/var/lib/mica/mqtt/broker.toml`, builds a
 //! [`rumqttd::Config`] in code, and blocks in [`rumqttd::Broker::start`].
 //!
 //! Building the config in code rather than handing rumqttd its own TOML is the

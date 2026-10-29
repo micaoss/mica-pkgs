@@ -3,8 +3,8 @@
 //! Neither format is rumqttd's. rumqttd reads a large TOML of its own with a
 //! router section, per-listener sections and a console block; none of that is
 //! a decision anyone operating a device should have to make. What micad renders
-//! into `/run/mica/mqtt-broker.toml` is three keys, and this module is the only
-//! thing that reads them. The rumqttd `Config` is then built programmatically
+//! into `/var/lib/mica/mqtt/broker.toml` is three keys, and this module is the
+//! only thing that reads them. The rumqttd `Config` is then built programmatically
 //! in `main`, so the values that are not configurable stay out of reach.
 
 use std::collections::HashMap;
