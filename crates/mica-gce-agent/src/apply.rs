@@ -102,12 +102,11 @@ pub fn apply(
                 .push(format!("{user}: an account outside the login class"));
             continue;
         }
-        // add-login sets admin only when it creates the account; after
-        // that, set-login-admin follows micad's switch.
+        // add-login makes or keeps the account and sets its admin either
+        // way; it runs only when list-login differs from micad's switch.
         let set = match logins.get(user) {
-            None => accounts.add(user, admin).map(|_| true),
-            Some(login) if login.admin != admin => accounts.set_admin(user, admin).map(|()| true),
-            Some(_) => Ok(false),
+            Some(login) if login.admin == admin => Ok(false),
+            _ => accounts.add(user, admin).map(|_| true),
         };
         match set {
             Ok(true) => report.accounts_set.push(user.clone()),
@@ -175,7 +174,7 @@ mod tests {
                 .map(|((name, admin), uid)| (name.clone(), Login { uid, admin: *admin }))
                 .collect())
         }
-        /// As mica-accounts: admin counts only when the account is made.
+        /// As mica-accounts: made or kept, an admin or no longer one.
         fn add(&self, name: &str, admin: bool) -> Result<u32> {
             self.calls
                 .lock()
@@ -185,21 +184,8 @@ mod tests {
             self.accounts
                 .lock()
                 .unwrap()
-                .entry(name.to_string())
-                .or_insert(admin);
+                .insert(name.to_string(), admin);
             Ok(20000)
-        }
-        fn set_admin(&self, name: &str, admin: bool) -> Result<()> {
-            self.calls
-                .lock()
-                .unwrap()
-                .push(format!("set-admin {name} {admin}"));
-            let mut accounts = self.accounts.lock().unwrap();
-            let entry = accounts
-                .get_mut(name)
-                .ok_or_else(|| anyhow::anyhow!("no {name}"))?;
-            *entry = admin;
-            Ok(())
         }
         fn remove(&self, name: &str) -> Result<()> {
             self.calls.lock().unwrap().push(format!("remove {name}"));
@@ -276,11 +262,11 @@ mod tests {
         let r = apply(&u, false, &paths, &stub).unwrap();
         assert_eq!(r.accounts_set, ["alice"]);
         assert!(r.keys_written.is_empty());
-        assert_eq!(stub.calls(), ["set-admin alice false"]);
+        assert_eq!(stub.calls(), ["add alice false"]);
         assert!(!stub.list().unwrap()["alice"].admin);
         assert_eq!(apply(&u, false, &paths, &stub).unwrap(), Report::default());
         apply(&u, true, &paths, &stub).unwrap();
-        assert_eq!(stub.calls(), ["set-admin alice true"]);
+        assert_eq!(stub.calls(), ["add alice true"]);
         assert!(stub.list().unwrap()["alice"].admin);
     }
 

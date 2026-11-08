@@ -7,10 +7,8 @@
 //!       one `<name> TAB <uid> TAB yes|no` line per login account; the third
 //!       field is whether it is an admin
 //!   mica-accounts add-login <name> [--admin]
-//!       create the account, an admin with --admin, and print its uid; for an
-//!       existing account it changes nothing
-//!   mica-accounts set-login-admin <name> on|off
-//!       make it an admin, or no longer one
+//!       create the account, or keep it, an admin with --admin and no longer
+//!       one without, and print its uid
 //!   mica-accounts remove-login <name>
 //!       drop the account, keeping its home
 //!
@@ -34,10 +32,8 @@ pub struct Login {
 pub trait Accounts: Send + Sync {
     /// Every login account.
     fn list(&self) -> Result<BTreeMap<String, Login>>;
-    /// Create `name`, an admin or not; its uid.
+    /// Create or keep `name`, an admin or no longer one; its uid.
     fn add(&self, name: &str, admin: bool) -> Result<u32>;
-    /// Make `name` an admin, or no longer one.
-    fn set_admin(&self, name: &str, admin: bool) -> Result<()>;
     /// Drop `name`; its home stays.
     fn remove(&self, name: &str) -> Result<()>;
 }
@@ -108,11 +104,6 @@ impl Accounts for Tool {
         uid(&self.run(&args)?)
     }
 
-    fn set_admin(&self, name: &str, admin: bool) -> Result<()> {
-        let on = if admin { "on" } else { "off" };
-        self.run(&["set-login-admin", name, on]).map(|_| ())
-    }
-
     fn remove(&self, name: &str) -> Result<()> {
         self.run(&["remove-login", name]).map(|_| ())
     }
@@ -162,13 +153,10 @@ esac"#,
         );
         assert_eq!(t.add("carol", true).unwrap(), 20002);
         assert_eq!(t.add("dave", false).unwrap(), 20002);
-        t.set_admin("alice", false).unwrap();
-        t.set_admin("bob", true).unwrap();
         t.remove("alice").unwrap();
         assert_eq!(
             std::fs::read_to_string(log).unwrap(),
-            "list-login\nadd-login carol --admin\nadd-login dave\n\
-             set-login-admin alice off\nset-login-admin bob on\nremove-login alice\n"
+            "list-login\nadd-login carol --admin\nadd-login dave\nremove-login alice\n"
         );
     }
 
@@ -178,7 +166,7 @@ esac"#,
         let failing = tool(&dir, "echo 'mica-accounts: refused' >&2; exit 1");
         let err = failing.add("alice", false).unwrap_err().to_string();
         assert!(err.contains("mica-accounts: refused"), "{err}");
-        assert!(failing.set_admin("alice", true).is_err());
+        assert!(failing.add("alice", true).is_err());
         for listing in [
             "echo 'alice 1 yes'",
             "printf 'alice\\t20000\\n'",

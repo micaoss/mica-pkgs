@@ -139,8 +139,8 @@ impl Fake {
     }
 }
 
-/// mica-accounts in memory: name -> admin; admin counts only when the
-/// account is made, as in mica-accounts.
+/// mica-accounts in memory: name -> admin; add-login makes or keeps the
+/// account and sets its admin either way, as in mica-accounts.
 #[derive(Default)]
 struct Stub {
     accounts: Mutex<BTreeMap<String, bool>>,
@@ -170,15 +170,8 @@ impl Accounts for Stub {
         self.accounts
             .lock()
             .unwrap()
-            .entry(name.to_string())
-            .or_insert(admin);
+            .insert(name.to_string(), admin);
         Ok(20000)
-    }
-    fn set_admin(&self, name: &str, admin: bool) -> anyhow::Result<()> {
-        if let Some(entry) = self.accounts.lock().unwrap().get_mut(name) {
-            *entry = admin;
-        }
-        Ok(())
     }
     fn remove(&self, name: &str) -> anyhow::Result<()> {
         self.accounts.lock().unwrap().remove(name);
