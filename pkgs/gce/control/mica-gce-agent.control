@@ -1,0 +1,16 @@
+Package: mica-gce-agent
+Version: 0.0.1-1
+Source-Date-Epoch: 1794096000
+Architecture: @ARCH@
+Maintainer: mica build <mica@example.invalid>
+Section: admin
+Priority: optional
+Depends: ${shlibs:Depends}
+Description: Mica OS agent for SSH logins on Google Compute Engine
+ Follows the instance's and the project's ssh-keys metadata, which gcloud
+ compute ssh and the console's SSH button write: keeps a login account
+ (mica-accounts' login class, group mica-gce-admins), a home on DATA and a key
+ file in /run/mica/gce/keys for each user they name, and removes a user's keys
+ when they leave the metadata or expire. Honours block-project-ssh-keys and
+ enable-oslogin. Carries a systemd unit and an OpenRC script and enables
+ neither: a Compute Engine product enables it.

@@ -731,6 +731,7 @@ dependencies = [
  "pin-project-lite",
  "smallvec",
  "tokio",
+ "want",
 ]
 
 [[package]]
@@ -930,6 +931,23 @@ dependencies = [
 [[package]]
 name = "mica-busname"
 version = "0.0.1"
+
+[[package]]
+name = "mica-gce-agent"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "http-body-util",
+ "hyper 1.12.0",
+ "hyper-util",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "mica-mqtt-broker"

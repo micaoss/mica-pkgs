@@ -59,6 +59,11 @@ rumqttd = { version = "0.20", default-features = false }
 # its packets decode from and encode to.
 russh-sftp = "3.0.0"
 bytes = "1"
+# mica-gce-agent's HTTP/1.1 client for the GCE metadata server: plain HTTP
+# to a link-local address, no TLS, no pool.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 
 # Every shipped executable is stripped: nothing on a device reads a symbol
 # table. A backtrace from a device is resolved against an unstripped build of

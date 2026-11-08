@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# mica-gce-agent on an OpenRC root: mica-gce-agent.service's counterpart. A
+# product that runs on Compute Engine adds it to the default runlevel.
+
+description="mica GCE agent (SSH logins from Compute Engine metadata)"
+command=/usr/bin/mica-gce-agent
+supervisor=supervise-daemon
+respawn_delay=5
+output_logger="logger -t mica-gce-agent -p daemon.info"
+error_logger="logger -t mica-gce-agent -p daemon.warn"
+
+depend() {
+    need mica-mounts
+    after net
+}

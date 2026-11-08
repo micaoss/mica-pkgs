@@ -11,7 +11,7 @@ contract with micad, and how the repository is built, checked and released.
 | `micaoss/mica-build-tools` | The build and release tools, pinned by `locks/mica-build-tools.pin` | `bin/mica-tools` runs the pinned commit |
 | `micaoss/mica-build-env` | The build images, pinned by `locks/mica-build-env.lock` | The Rust image compiles and gates; the base image packs, so `${shlibs:Depends}` resolves against the pinned Debian; armhf has no image of its own and is packed in the amd64 C image, against its cross toolchain |
 | `micaoss/mica-system-base` | The floor root and both inits | The packages run on it: `passwd` for the service accounts, D-Bus, systemd or OpenRC with `supervise-daemon`, and dropbear (`mica-ssh`) for SFTP |
-| `micaoss/mica-core` | micad, the API and the console | micad writes the MQTT configuration and starts both MQTT services by name (section 3) |
+| `micaoss/mica-core` | micad, the API and the console | micad writes the MQTT configuration and starts both MQTT services by name (section 3); root's and mica's keys and the hostname stay micad's, which mica-gce-agent never writes (section 4) |
 | `micaoss/mica-build` | Boards, products and the signed images | Pins a release of this repository and installs its packages, by name, into the roots of the products that select them |
 
 ## 2. Packages
@@ -23,6 +23,7 @@ Every package is built for amd64, arm64 and armhf.
 | `mica-mqtt-broker` | `pkgs/mqtt` | `/usr/bin/mica-mqtt-broker`, the local MQTT 3.1.1 broker | `mica-mqtt-broker.service` | `/etc/init.d/mica-mqtt-broker` | By micad, when MQTT is on |
 | `mica-mqttd` | `pkgs/mqtt` | `/usr/bin/mica-mqttd`, the application-data bridge to MQTT, and the empty directory `/usr/lib/mica/mqtt-applications.d` | `mica-mqttd.service` | `/etc/init.d/mica-mqttd` | By micad, when MQTT is on |
 | `mica-sftp-server` | `pkgs/sftp` | `/usr/lib/sftp-server`, SFTP version 3 | -- | -- | By dropbear, per `sftp` subsystem request |
+| `mica-gce-agent` | `pkgs/gce` | `/usr/bin/mica-gce-agent`, SSH logins from Google Compute Engine metadata | `mica-gce-agent.service` | `/etc/init.d/mica-gce-agent` | At boot, in a Compute Engine product that enables it |
 
 Each package also installs `/usr/share/doc/<package>/copyright`.
 
@@ -40,6 +41,9 @@ Each package also installs `/usr/share/doc/<package>/copyright`.
 - **mica-sftp-server** is exec'd by dropbear for the `sftp` subsystem and runs as the logged-in
   user. It speaks SFTP version 3 on its standard input and output, uses no other Mica code, and
   has no configuration and no service.
+- **mica-gce-agent** follows the instance's and the project's `ssh-keys` metadata and keeps a
+  login account, a home and a key file for each user it names (section 4). It runs as root and
+  writes nothing micad owns.
 
 ## 3. The contract with micad
 
@@ -156,12 +160,50 @@ com.mica.<class>[.<suffix>]
 The crate has no dependencies and is not published. micad carries its own copy of the rule with
 the same tests; the two must give the same answer for every name.
 
-## 4. The repository
+## 4. mica-gce-agent
+
+gcloud compute ssh and the console's SSH button add `<user>:<type> <key> [<comment>]` lines to the
+`ssh-keys` attribute of the instance or the project. The agent reads the whole metadata document
+from `169.254.169.254` (`metadata.google.internal`) with `Metadata-Flavor: Google`, refuses an
+answer without that header, and then follows it with a long poll (`wait_for_change`, the last
+ETag, `timeout_sec=60`). A failed request is retried after 1 s, doubling to 30 s.
+
+- **Which keys.** The instance's `ssh-keys` and `sshKeys`, and the project's unless the instance
+  sets `block-project-ssh-keys` or carries `sshKeys`. A user name is `[a-z_][a-z0-9_.-]{0,31}`,
+  a key one of `ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256/384/521`,
+  `sk-ssh-ed25519@openssh.com` and `sk-ecdsa-sha2-nistp256@openssh.com` with base64 data; any
+  other line, an options prefix included, is refused and logged. A comment
+  `google-ssh {"userName":..,"expireOn":..}` ends the key at `expireOn`, without a metadata
+  change; one whose JSON or time does not read refuses the key. With `enable-oslogin` true on
+  the instance, or else on the project, no metadata key counts.
+- **Accounts.** Through two commands of Base's `mica-accounts` login class:
+  `mica-accounts login-list` (one `<name> TAB <uid> TAB <gid>` line per login account) and
+  `mica-accounts login-add <name> mica-gce-admins` (create or keep the account with that
+  supplementary group, print its line). mica-accounts picks the uid and keeps the account on
+  STATE. A name in `/etc/passwd` that is not a login account (root, mica, the service accounts)
+  is never used. Accounts stay when their keys go.
+- **Homes.** `/home/<user>` on DATA, created once with mode 0700 and owned by the user; never
+  removed or changed afterwards.
+- **Keys.** One file per user, `/run/mica/gce/keys/<user>` (mode 0644, written through a
+  temporary file and a rename), holding the user's lines. The directory is in RAM and only the
+  agent writes it: a user without keys has no file, and nothing is left from a previous boot.
+  root's and mica's `~/.ssh/authorized_keys` are micad's and never touched.
+- **Not done.** The hostname (micad's), OS Login, metadata scripts and the network.
+
+What Base provides for it: the login class of `mica-accounts` and the group `mica-gce-admins`;
+shadow entries `*`, not `!`, for login accounts, since OpenSSH without PAM refuses every login to
+`!`; and mica-openssh's `AuthorizedKeysFile .ssh/authorized_keys /run/mica/gce/keys/%u`
+(dropbear has no second key file, so a Compute Engine product uses mica-openssh). Whether
+`mica-gce-admins` grants root is Base's decision. The service runs in the host's mount namespace,
+because mica-accounts binds its builds over `/etc/passwd` and `/etc/group`.
+
+## 5. The repository
 
 | Path | Content |
 | --- | --- |
 | `crates/mica-mqtt-broker`, `crates/mica-mqttd` | The broker and the bridge; `dist/` holds each service's systemd unit and OpenRC script |
 | `crates/mica-sftp-server` | The SFTP server |
+| `crates/mica-gce-agent` | The Compute Engine agent; `dist/` holds its systemd unit and OpenRC script; `tests/agent.rs` runs it against a fake metadata server |
 | `crates/mica-busname` | The `com.mica.*` name rule |
 | `pkgs/<producer>/` | One producer per directory: `mica-inputs` (its packages and what decides their bytes), `producer.env`, `control/<package>.control`, `prepare.sh`, `Dockerfile`, and `maintainer/<package>/` for maintainer scripts |
 | `pkgs/copyright` | The copyright file every package installs |
@@ -174,7 +216,7 @@ version of every binary the producer ships. Either part is bumped with any chang
 the package; a package at a released version never changes
 (`mica-build-tools:docs/spec/package-versions.md`).
 
-## 5. Building and the gates
+## 6. Building and the gates
 
 The host needs docker with buildx, bash, git, make, curl and jq, and no Rust toolchain.
 
@@ -193,7 +235,7 @@ The host needs docker with buildx, bash, git, make, curl and jq, and no Rust too
 architecture (armhf cross-built on the amd64 runner), and then holds every archive against the latest release with `mica-tools pool guard`:
 a package at a released version keeps its inputs and its bytes. It publishes nothing.
 
-## 6. Releases
+## 7. Releases
 
 A release is named by its UTC minute, `YYYYMMDD-HHMM`, and cut with
 `gh release create <YYYYMMDD-HHMM> --target <commit of main>`. Publishing it runs `release.yml`:

@@ -1,0 +1,4 @@
+# Only the control templates come from the producer directory; binaries and
+# the copyright file arrive through the bin and pkgs build contexts.
+*
+!control/*.control
