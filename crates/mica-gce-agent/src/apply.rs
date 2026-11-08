@@ -26,6 +26,8 @@ pub struct Paths {
     pub keys: PathBuf,
     /// The passwd file whose names, outside the login class, are never used.
     pub passwd: PathBuf,
+    /// micad's grant switch for the admin group (`crate::admin_granted`).
+    pub grant: PathBuf,
 }
 
 /// What one pass did, for the log.
@@ -205,6 +207,7 @@ mod tests {
         let paths = Paths {
             keys: dir.path().join("run/authorized-keys"),
             passwd: dir.path().join("passwd"),
+            grant: dir.path().join("cloud-admins"),
         };
         fs::write(
             &paths.passwd,

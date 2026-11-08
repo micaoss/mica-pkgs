@@ -22,6 +22,10 @@ struct Args {
     #[arg(long, default_value = "/run/mica/authorized-keys")]
     keys: PathBuf,
 
+    /// micad's grant: `on` puts metadata users in the admin group.
+    #[arg(long, default_value = "/run/mica/cloud-admins")]
+    cloud_admins: PathBuf,
+
     /// Names here that are not login accounts are never used.
     #[arg(long, default_value = "/etc/passwd")]
     passwd: PathBuf,
@@ -55,6 +59,7 @@ async fn main() {
         Paths {
             keys: args.keys,
             passwd: args.passwd,
+            grant: args.cloud_admins,
         },
         Arc::new(Tool {
             path: args.accounts_tool,

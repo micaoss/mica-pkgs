@@ -180,12 +180,17 @@ struct Agent {
 }
 
 impl Agent {
-    fn start(address: std::net::SocketAddr) -> Self {
+    /// The agent, with micad's switch `on` when `granted`.
+    fn start(address: std::net::SocketAddr, granted: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths {
             keys: dir.path().join("authorized-keys"),
             passwd: dir.path().join("passwd"),
+            grant: dir.path().join("cloud-admins"),
         };
+        if granted {
+            std::fs::write(&paths.grant, "on\n").unwrap();
+        }
         std::fs::write(&paths.passwd, "root:x:0:0::/root:/bin/sh\n").unwrap();
         let stub = Arc::new(Stub::default());
         let mut client = Client::new(address);
@@ -258,7 +263,7 @@ async fn keys_follow_the_metadata() {
         json!({"ssh-keys": format!("carol:{RSA}")}),
     ))
     .await;
-    let agent = Agent::start(address);
+    let agent = Agent::start(address, true);
     eventually("alice and carol", || {
         names(&agent.keys()) == ["alice", "carol"]
     })
@@ -321,7 +326,7 @@ async fn an_expiring_key_goes_without_a_metadata_change() {
         json!({}),
     ))
     .await;
-    let agent = Agent::start(address);
+    let agent = Agent::start(address, true);
     eventually("alice and bob", || names(&agent.keys()) == ["alice", "bob"]).await;
     eventually("bob expired", || names(&agent.keys()) == ["alice"]).await;
     agent.stop().await;
@@ -336,7 +341,7 @@ async fn failures_are_retried() {
     .await;
     fake.state.lock().unwrap().failures =
         vec!["500 Internal Server Error", "503 Service Unavailable"];
-    let agent = Agent::start(address);
+    let agent = Agent::start(address, true);
     eventually("alice after two failures", || {
         names(&agent.keys()) == ["alice"]
     })
@@ -359,7 +364,7 @@ async fn an_answer_without_metadata_flavor_is_refused() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("Metadata-Flavor"), "{err}");
-    let agent = Agent::start(address);
+    let agent = Agent::start(address, true);
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert!(agent.keys().is_empty());
     fake.state.lock().unwrap().unflavored = false;
@@ -386,8 +391,30 @@ async fn no_metadata_server_leaves_nothing_and_stops_cleanly() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);
-    let agent = Agent::start(address);
+    let agent = Agent::start(address, true);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(!Path::new(&agent.paths.keys).exists());
+    agent.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_admin_group_follows_micad_s_switch() {
+    let (_fake, address) = Fake::start(metadata(
+        json!({"ssh-keys": format!("alice:{ED}\nbob:{RSA}")}),
+        json!({}),
+    ))
+    .await;
+    let agent = Agent::start(address, false);
+    let admins = |agent: &Agent| agent.stub.admins().unwrap().len();
+    // No switch file: no grant.
+    eventually("alice and bob", || names(&agent.keys()) == ["alice", "bob"]).await;
+    assert_eq!(admins(&agent), 0);
+    // micad turns it on: the next pass (at most one long poll) grants.
+    std::fs::write(&agent.paths.grant, "on\n").unwrap();
+    eventually("both admins", || admins(&agent) == 2).await;
+    // And off again.
+    std::fs::write(&agent.paths.grant, "off\n").unwrap();
+    eventually("no admins", || admins(&agent) == 0).await;
+    assert_eq!(names(&agent.keys()), ["alice", "bob"]);
     agent.stop().await;
 }

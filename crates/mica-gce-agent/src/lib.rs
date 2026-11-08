@@ -14,6 +14,7 @@ pub mod keys;
 pub mod metadata;
 
 use std::future::Future;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,10 +31,11 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
 /// Whether metadata users are admins (mica-accounts' admin group) now.
 ///
-/// micad owns this switch, a visible and revocable grant that is on by default
-/// on Compute Engine products; until its read path exists, the grant is on.
-fn admin_granted() -> bool {
-    true
+/// micad owns this switch, a visible and revocable grant, and writes it to
+/// `grant`: `on` grants; anything else, an unreadable file or none at all is
+/// no grant. It is read on every pass, at least once per long poll.
+pub fn admin_granted(grant: &Path) -> bool {
+    std::fs::read_to_string(grant).is_ok_and(|text| text.trim() == "on")
 }
 
 /// Apply the metadata `document` once, at the current time, and log what
@@ -47,7 +49,7 @@ fn apply_document(
     for refused in &desired.refused {
         tracing::warn!("ssh-keys line refused: {refused}");
     }
-    let admin = admin_granted();
+    let admin = admin_granted(&paths.grant);
     match apply::apply(&desired.users, admin, paths, accounts) {
         Ok(report) => {
             for user in &report.accounts_set {
@@ -127,5 +129,32 @@ async fn sleep_or_never(duration: Option<Duration>) {
     match duration {
         Some(duration) => tokio::time::sleep(duration).await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_on_grants() {
+        let dir = tempfile::tempdir().unwrap();
+        let grant = dir.path().join("cloud-admins");
+        assert!(!admin_granted(&grant), "a missing file is no grant");
+        for (text, granted) in [
+            ("on", true),
+            ("on\n", true),
+            ("off\n", false),
+            ("ON\n", false),
+            ("", false),
+            ("yes\n", false),
+            ("on on\n", false),
+        ] {
+            std::fs::write(&grant, text).unwrap();
+            assert_eq!(admin_granted(&grant), granted, "{text:?}");
+        }
+        std::fs::remove_file(&grant).unwrap();
+        std::fs::create_dir(&grant).unwrap();
+        assert!(!admin_granted(&grant), "an unreadable switch is no grant");
     }
 }

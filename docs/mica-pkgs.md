@@ -183,10 +183,10 @@ ETag, `timeout_sec=60`). A failed request is retried after 1 s, doubling to 30 s
   in 20000..29999, makes `/home/<name>` on DATA and keeps the account on STATE. A user gets an
   account while it has keys and loses it, not its home, when they go. root, mica and every name
   in `/etc/passwd` that is not a login account (the service accounts) are never used.
-- **Admins.** Metadata users are in `mica-admins` while micad grants it, and taken out when it
-  does not; the agent compares the group's members in `/etc/group` and calls `add-login` only
-  for a change. micad's switch is not read yet: the grant is on (one function,
-  `admin_granted`).
+- **Admins.** Metadata users are in `mica-admins` while micad grants it: micad writes its
+  switch to `/run/mica/cloud-admins`, and `on` grants; anything else, or no file, is no grant.
+  The switch is read on every pass, so a change takes effect within one long poll (60 s). The
+  agent compares the group's members in `/etc/group` and calls `add-login` only for a change.
 - **Keys.** One file per user, `/run/mica/authorized-keys/<user>` (mode 0644, written through
   a temporary file and a rename), holding the user's lines. The directory is in RAM and only the
   agent writes it: a user without keys has no file, and nothing is left from a previous boot.
