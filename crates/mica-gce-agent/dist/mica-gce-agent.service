@@ -2,7 +2,7 @@
 Description=mica GCE agent (SSH logins from Compute Engine metadata)
 After=network-online.target mica-accounts.service
 Wants=network-online.target
-# The homes are on DATA.
+# mica-accounts makes the login accounts' homes on DATA.
 RequiresMountsFor=/home
 
 [Service]

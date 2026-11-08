@@ -42,8 +42,8 @@ Each package also installs `/usr/share/doc/<package>/copyright`.
   user. It speaks SFTP version 3 on its standard input and output, uses no other Mica code, and
   has no configuration and no service.
 - **mica-gce-agent** follows the instance's and the project's `ssh-keys` metadata and keeps a
-  login account, a home and a key file for each user it names (section 4). It runs as root and
-  writes nothing micad owns.
+  login account (with its home, made by mica-accounts) and a key file for each user it names
+  (section 4). It runs as root and writes nothing micad owns.
 
 ## 3. The contract with micad
 
@@ -169,32 +169,36 @@ answer without that header, and then follows it with a long poll (`wait_for_chan
 ETag, `timeout_sec=60`). A failed request is retried after 1 s, doubling to 30 s.
 
 - **Which keys.** The instance's `ssh-keys` and `sshKeys`, and the project's unless the instance
-  sets `block-project-ssh-keys` or carries `sshKeys`. A user name is `[a-z_][a-z0-9_.-]{0,31}`,
+  sets `block-project-ssh-keys` or carries `sshKeys`. A user name is `[a-z_][a-z0-9_-]{0,31}`,
   a key one of `ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256/384/521`,
   `sk-ssh-ed25519@openssh.com` and `sk-ecdsa-sha2-nistp256@openssh.com` with base64 data; any
   other line, an options prefix included, is refused and logged. A comment
   `google-ssh {"userName":..,"expireOn":..}` ends the key at `expireOn`, without a metadata
   change; one whose JSON or time does not read refuses the key. With `enable-oslogin` true on
   the instance, or else on the project, no metadata key counts.
-- **Accounts.** Through two commands of Base's `mica-accounts` login class:
-  `mica-accounts login-list` (one `<name> TAB <uid> TAB <gid>` line per login account) and
-  `mica-accounts login-add <name> mica-gce-admins` (create or keep the account with that
-  supplementary group, print its line). mica-accounts picks the uid and keeps the account on
-  STATE. A name in `/etc/passwd` that is not a login account (root, mica, the service accounts)
-  is never used. Accounts stay when their keys go.
-- **Homes.** `/home/<user>` on DATA, created once with mode 0700 and owned by the user; never
-  removed or changed afterwards.
-- **Keys.** One file per user, `/run/mica/gce/keys/<user>` (mode 0644, written through a
-  temporary file and a rename), holding the user's lines. The directory is in RAM and only the
+- **Accounts.** Through Base's `mica-accounts` login class: `mica-accounts list-login` (one
+  `<name> TAB <uid>` line per login account), `mica-accounts add-login <name> [--admin]` (create
+  or keep the account, in the admin group `mica-admins` or out of it; prints its uid) and
+  `mica-accounts remove-login <name>` (drop it, keeping its home). mica-accounts picks the uid
+  in 20000..29999, makes `/home/<name>` on DATA and keeps the account on STATE. A user gets an
+  account while it has keys and loses it, not its home, when they go. root, mica and every name
+  in `/etc/passwd` that is not a login account (the service accounts) are never used.
+- **Admins.** Metadata users are in `mica-admins` while micad grants it, and taken out when it
+  does not; the agent compares the group's members in `/etc/group` and calls `add-login` only
+  for a change. micad's switch is not read yet: the grant is on (one function,
+  `admin_granted`).
+- **Keys.** One file per user, `/run/mica/authorized-keys/<user>` (mode 0644, written through
+  a temporary file and a rename), holding the user's lines. The directory is in RAM and only the
   agent writes it: a user without keys has no file, and nothing is left from a previous boot.
   root's and mica's `~/.ssh/authorized_keys` are micad's and never touched.
 - **Not done.** The hostname (micad's), OS Login, metadata scripts and the network.
 
-What Base provides for it: the login class of `mica-accounts` and the group `mica-gce-admins`;
-shadow entries `*`, not `!`, for login accounts, since OpenSSH without PAM refuses every login to
-`!`; and mica-openssh's `AuthorizedKeysFile .ssh/authorized_keys /run/mica/gce/keys/%u`
-(dropbear has no second key file, so a Compute Engine product uses mica-openssh). Whether
-`mica-gce-admins` grants root is Base's decision. The service runs in the host's mount namespace,
+What Base provides for it: the login class of `mica-accounts` and the group `mica-admins`, with
+what that group may do; shadow entries `*`, not `!`, for login accounts, since OpenSSH without
+PAM refuses every login to `!`; the directory `/run/mica/authorized-keys` (root:root 0755); and
+mica-openssh's `AuthorizedKeysFile .ssh/authorized_keys /run/mica/authorized-keys/%u` for every
+user but root and mica, which keep only their own file (dropbear has no second key file, so a
+Compute Engine product uses mica-openssh). The service runs in the host's mount namespace,
 because mica-accounts binds its builds over `/etc/passwd` and `/etc/group`.
 
 ## 5. The repository

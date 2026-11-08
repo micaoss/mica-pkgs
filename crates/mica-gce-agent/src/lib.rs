@@ -3,9 +3,10 @@
 //! gcloud compute ssh and the console's SSH button add `ssh-keys` lines to the
 //! instance's or the project's metadata. The agent follows the metadata with a
 //! long poll and, for each user those lines name, keeps a login account (Base's
-//! mica-accounts), a home on DATA and the user's key file, which sshd reads as
-//! a second AuthorizedKeysFile. It never writes root's or mica's keys, which
-//! are micad's, and never the hostname.
+//! mica-accounts, which also makes the home on DATA) and the user's key file,
+//! which sshd reads as a second AuthorizedKeysFile for every user but root and
+//! mica. It never writes root's or mica's keys, which are micad's, and never
+//! the hostname.
 
 pub mod accounts;
 pub mod apply;
@@ -27,6 +28,14 @@ use crate::metadata::Client;
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
+/// Whether metadata users are admins (mica-accounts' admin group) now.
+///
+/// micad owns this switch, a visible and revocable grant that is on by default
+/// on Compute Engine products; until its read path exists, the grant is on.
+fn admin_granted() -> bool {
+    true
+}
+
 /// Apply the metadata `document` once, at the current time, and log what
 /// changed. Returns when the earliest applied key expires.
 fn apply_document(
@@ -38,13 +47,14 @@ fn apply_document(
     for refused in &desired.refused {
         tracing::warn!("ssh-keys line refused: {refused}");
     }
-    match apply::apply(&desired.users, paths, accounts) {
+    let admin = admin_granted();
+    match apply::apply(&desired.users, admin, paths, accounts) {
         Ok(report) => {
-            for user in &report.accounts_added {
-                tracing::info!(user, "login account added");
+            for user in &report.accounts_set {
+                tracing::info!(user, admin, "login account set");
             }
-            for user in &report.homes_created {
-                tracing::info!(user, "home created");
+            for user in &report.accounts_removed {
+                tracing::info!(user, "login account removed, home kept");
             }
             for user in &report.keys_written {
                 tracing::info!(user, "keys written");

@@ -4,13 +4,12 @@
 // Tests and fixtures answer a broken expectation by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::collections::BTreeMap;
-use std::os::unix::fs::MetadataExt;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mica_gce_agent::accounts::{Account, Accounts};
+use mica_gce_agent::accounts::Accounts;
 use mica_gce_agent::apply::Paths;
 use mica_gce_agent::metadata::Client;
 use serde_json::{Value, json};
@@ -140,22 +139,35 @@ impl Fake {
     }
 }
 
-/// mica-accounts in memory; ids are the test's own so homes chown without root.
+/// mica-accounts in memory: name -> admin.
+#[derive(Default)]
 struct Stub {
-    accounts: Mutex<BTreeMap<String, Account>>,
-    owner: Account,
+    accounts: Mutex<BTreeMap<String, bool>>,
 }
 
 impl Accounts for Stub {
-    fn list(&self) -> anyhow::Result<BTreeMap<String, Account>> {
-        Ok(self.accounts.lock().unwrap().clone())
+    fn list(&self) -> anyhow::Result<BTreeMap<String, u32>> {
+        let accounts = self.accounts.lock().unwrap();
+        Ok(accounts.keys().cloned().zip(20000..).collect())
     }
-    fn add(&self, name: &str) -> anyhow::Result<Account> {
+    fn admins(&self) -> anyhow::Result<BTreeSet<String>> {
+        let accounts = self.accounts.lock().unwrap();
+        Ok(accounts
+            .iter()
+            .filter(|(_, admin)| **admin)
+            .map(|(name, _)| name.clone())
+            .collect())
+    }
+    fn add(&self, name: &str, admin: bool) -> anyhow::Result<u32> {
         self.accounts
             .lock()
             .unwrap()
-            .insert(name.to_string(), self.owner);
-        Ok(self.owner)
+            .insert(name.to_string(), admin);
+        Ok(20000)
+    }
+    fn remove(&self, name: &str) -> anyhow::Result<()> {
+        self.accounts.lock().unwrap().remove(name);
+        Ok(())
     }
 }
 
@@ -170,21 +182,12 @@ struct Agent {
 impl Agent {
     fn start(address: std::net::SocketAddr) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let meta = std::fs::metadata(dir.path()).unwrap();
         let paths = Paths {
-            keys: dir.path().join("keys"),
-            homes: dir.path().join("home"),
+            keys: dir.path().join("authorized-keys"),
             passwd: dir.path().join("passwd"),
         };
-        std::fs::create_dir(&paths.homes).unwrap();
         std::fs::write(&paths.passwd, "root:x:0:0::/root:/bin/sh\n").unwrap();
-        let stub = Arc::new(Stub {
-            accounts: Mutex::new(BTreeMap::new()),
-            owner: Account {
-                uid: meta.uid(),
-                gid: meta.gid(),
-            },
-        });
+        let stub = Arc::new(Stub::default());
         let mut client = Client::new(address);
         client.poll_seconds = 1;
         let (stop, stopped) = oneshot::channel();
@@ -261,8 +264,10 @@ async fn keys_follow_the_metadata() {
     })
     .await;
     assert_eq!(agent.keys()["alice"], format!("{ED} alice@laptop\n"));
-    assert!(agent.paths.homes.join("alice").is_dir());
-    assert!(agent.paths.homes.join("carol").is_dir());
+    assert_eq!(
+        *agent.stub.accounts.lock().unwrap(),
+        BTreeMap::from([("alice".to_string(), true), ("carol".to_string(), true)])
+    );
 
     // The console adds a key: the long poll sees it.
     fake.set(metadata(
@@ -274,14 +279,13 @@ async fn keys_follow_the_metadata() {
     })
     .await;
 
-    // The instance blocks the project's keys: carol's file goes, her home stays.
+    // The instance blocks the project's keys: carol's file and account go.
     fake.set(metadata(
         json!({"ssh-keys": format!("alice:{ED} alice@laptop\nbob:{RSA}"), "block-project-ssh-keys": "true"}),
         json!({"ssh-keys": format!("carol:{RSA}")}),
     ));
     eventually("carol removed", || names(&agent.keys()) == ["alice", "bob"]).await;
-    assert!(agent.paths.homes.join("carol").is_dir());
-    assert!(agent.stub.list().unwrap().contains_key("carol"));
+    assert!(!agent.stub.list().unwrap().contains_key("carol"));
 
     // OS Login takes over: no metadata key is left.
     fake.set(metadata(
@@ -289,6 +293,10 @@ async fn keys_follow_the_metadata() {
         json!({}),
     ));
     eventually("all removed", || agent.keys().is_empty()).await;
+    eventually("no login account left", || {
+        agent.stub.accounts.lock().unwrap().is_empty()
+    })
+    .await;
 
     let requests = fake.requests();
     assert!(requests[0].starts_with("GET /computeMetadata/v1/?recursive=true&alt=json HTTP/1.1"));

@@ -9,7 +9,7 @@ use mica_gce_agent::accounts::Tool;
 use mica_gce_agent::apply::Paths;
 use mica_gce_agent::metadata::Client;
 
-/// Follows GCE metadata ssh-keys: login accounts, homes and key files.
+/// Follows GCE metadata ssh-keys: login accounts and key files.
 #[derive(Debug, Parser)]
 #[command(name = "mica-gce-agent", version)]
 struct Args {
@@ -18,13 +18,9 @@ struct Args {
     #[arg(long, default_value = "169.254.169.254:80")]
     metadata: SocketAddr,
 
-    /// The key files sshd reads as `/run/mica/gce/keys/%u`.
-    #[arg(long, default_value = "/run/mica/gce/keys")]
+    /// The key files sshd reads as `/run/mica/authorized-keys/%u`.
+    #[arg(long, default_value = "/run/mica/authorized-keys")]
     keys: PathBuf,
-
-    /// The parent of the users' homes, on DATA.
-    #[arg(long, default_value = "/home")]
-    homes: PathBuf,
 
     /// Names here that are not login accounts are never used.
     #[arg(long, default_value = "/etc/passwd")]
@@ -34,9 +30,13 @@ struct Args {
     #[arg(long, default_value = "/usr/lib/mica/mica-accounts")]
     accounts_tool: PathBuf,
 
-    /// The supplementary group of every login account.
-    #[arg(long, default_value = "mica-gce-admins")]
-    group: String,
+    /// The group file the admin group is read from.
+    #[arg(long, default_value = "/etc/group")]
+    group_file: PathBuf,
+
+    /// mica-accounts' admin group.
+    #[arg(long, default_value = "mica-admins")]
+    admin_group: String,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -54,12 +54,12 @@ async fn main() {
         Client::new(args.metadata),
         Paths {
             keys: args.keys,
-            homes: args.homes,
             passwd: args.passwd,
         },
         Arc::new(Tool {
             path: args.accounts_tool,
-            group: args.group,
+            group_file: args.group_file,
+            admin_group: args.admin_group,
         }),
         std::future::pending(),
     )

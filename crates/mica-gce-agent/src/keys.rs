@@ -50,7 +50,8 @@ pub struct Key {
     pub expires: Option<DateTime<Utc>>,
 }
 
-/// A user name the agent will create: `[a-z_][a-z0-9_.-]{0,31}`.
+/// A user name the agent will create, mica-accounts' login name rule:
+/// `[a-z_][a-z0-9_-]{0,31}`.
 pub fn valid_user(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
@@ -58,7 +59,7 @@ pub fn valid_user(name: &str) -> bool {
     };
     name.len() <= 32
         && (first.is_ascii_lowercase() || first == '_')
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_.-".contains(c))
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-".contains(c))
 }
 
 /// A metadata attribute as a boolean, as Google's agent reads them.
@@ -83,7 +84,7 @@ pub fn parse_line(line: &str) -> Result<Option<Key>, String> {
     let (user, rest) = line.split_once(':').ok_or("no `<user>:`")?;
     if !valid_user(user) {
         return Err(format!(
-            "user name `{user}` is not [a-z_][a-z0-9_.-]{{0,31}}"
+            "user name `{user}` is not [a-z_][a-z0-9_-]{{0,31}}"
         ));
     }
     let mut fields = rest.split_whitespace();
@@ -219,6 +220,7 @@ mod tests {
             ED.to_string(),
             format!("Alice:{ED}"),
             format!("root user:{ED}"),
+            format!("a.b:{ED}"),
             format!("{}:{ED}", "a".repeat(33)),
             "alice:ssh-dss AAAA".to_string(),
             format!("alice:command=\"sh\" {ED}"),
