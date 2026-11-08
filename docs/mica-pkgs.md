@@ -177,16 +177,19 @@ ETag, `timeout_sec=60`). A failed request is retried after 1 s, doubling to 30 s
   change; one whose JSON or time does not read refuses the key. With `enable-oslogin` true on
   the instance, or else on the project, no metadata key counts.
 - **Accounts.** Through Base's `mica-accounts` login class: `mica-accounts list-login` (one
-  `<name> TAB <uid>` line per login account), `mica-accounts add-login <name> [--admin]` (create
-  or keep the account, in the admin group `mica-admins` or out of it; prints its uid) and
-  `mica-accounts remove-login <name>` (drop it, keeping its home). mica-accounts picks the uid
-  in 20000..29999, makes `/home/<name>` on DATA and keeps the account on STATE. A user gets an
-  account while it has keys and loses it, not its home, when they go. root, mica and every name
-  in `/etc/passwd` that is not a login account (the service accounts) are never used.
-- **Admins.** Metadata users are in `mica-admins` while micad grants it: micad writes its
-  switch to `/run/mica/cloud-admins`, and `on` grants; anything else, or no file, is no grant.
-  The switch is read on every pass, so a change takes effect within one long poll (60 s). The
-  agent compares the group's members in `/etc/group` and calls `add-login` only for a change.
+  `<name> TAB <uid> TAB yes|no` line per login account, the third field whether it is an
+  admin), `mica-accounts add-login <name> [--admin]` (create the account, an admin with
+  `--admin`; prints its uid; changes nothing for an existing account),
+  `mica-accounts set-login-admin <name> on|off` and `mica-accounts remove-login <name>` (drop it,
+  keeping its home). mica-accounts picks the uid in 20000..29999, makes `/home/<name>` on DATA
+  and keeps the account on STATE. A user gets an account while it has keys and loses it, not its
+  home, when they go. root, mica and every name in `/etc/passwd` that is not a login account
+  (the service accounts) are never used.
+- **Admins.** Metadata users are admins (mica-accounts' `mica-admins`) while micad grants it:
+  micad writes its switch to `/run/mica/cloud-admins`, and `on` grants; anything else, or no
+  file, is no grant. A new account is made with `--admin` when the grant is on; an existing one
+  whose `list-login` admin field differs from the switch gets `set-login-admin on|off`. The
+  switch is read on every pass, so a change takes effect within one long poll (60 s).
 - **Keys.** One file per user, `/run/mica/authorized-keys/<user>` (mode 0644, written through
   a temporary file and a rename), holding the user's lines. The directory is in RAM and only the
   agent writes it: a user without keys has no file, and nothing is left from a previous boot.

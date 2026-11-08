@@ -33,14 +33,6 @@ struct Args {
     /// Base's account tool and its login class.
     #[arg(long, default_value = "/usr/lib/mica/mica-accounts")]
     accounts_tool: PathBuf,
-
-    /// The group file the admin group is read from.
-    #[arg(long, default_value = "/etc/group")]
-    group_file: PathBuf,
-
-    /// mica-accounts' admin group.
-    #[arg(long, default_value = "mica-admins")]
-    admin_group: String,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -63,8 +55,6 @@ async fn main() {
         },
         Arc::new(Tool {
             path: args.accounts_tool,
-            group_file: args.group_file,
-            admin_group: args.admin_group,
         }),
         std::future::pending(),
     )

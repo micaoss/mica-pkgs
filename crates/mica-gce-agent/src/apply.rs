@@ -33,7 +33,7 @@ pub struct Paths {
 /// What one pass did, for the log.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Report {
-    /// Accounts created, or moved into or out of the admin group.
+    /// Accounts created, or made an admin or no longer one.
     pub accounts_set: Vec<String>,
     pub accounts_removed: Vec<String>,
     pub keys_written: Vec<String>,
@@ -91,7 +91,6 @@ pub fn apply(
         .with_context(|| format!("creating {}", paths.keys.display()))?;
 
     let logins = accounts.list()?;
-    let admins = accounts.admins()?;
     let taken = passwd_names(&paths.passwd)?;
 
     let mut written = BTreeSet::new();
@@ -103,13 +102,19 @@ pub fn apply(
                 .push(format!("{user}: an account outside the login class"));
             continue;
         }
-        if !logins.contains_key(user) || admins.contains(user) != admin {
-            match accounts.add(user, admin) {
-                Ok(_) => report.accounts_set.push(user.clone()),
-                Err(err) => {
-                    report.skipped.push(format!("{user}: {err:#}"));
-                    continue;
-                }
+        // add-login sets admin only when it creates the account; after
+        // that, set-login-admin follows micad's switch.
+        let set = match logins.get(user) {
+            None => accounts.add(user, admin).map(|_| true),
+            Some(login) if login.admin != admin => accounts.set_admin(user, admin).map(|()| true),
+            Some(_) => Ok(false),
+        };
+        match set {
+            Ok(true) => report.accounts_set.push(user.clone()),
+            Ok(false) => {}
+            Err(err) => {
+                report.skipped.push(format!("{user}: {err:#}"));
+                continue;
             }
         }
         let content = lines
@@ -146,6 +151,7 @@ pub fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accounts::Login;
     use std::os::unix::fs::MetadataExt;
     use std::sync::Mutex;
 
@@ -159,24 +165,17 @@ mod tests {
     }
 
     impl Accounts for Stub {
-        fn list(&self) -> Result<BTreeMap<String, u32>> {
+        fn list(&self) -> Result<BTreeMap<String, Login>> {
             Ok(self
                 .accounts
                 .lock()
                 .unwrap()
-                .keys()
-                .zip(20000..)
-                .map(|(name, uid)| (name.clone(), uid))
-                .collect())
-        }
-        fn admins(&self) -> Result<BTreeSet<String>> {
-            let accounts = self.accounts.lock().unwrap();
-            Ok(accounts
                 .iter()
-                .filter(|(_, admin)| **admin)
-                .map(|(name, _)| name.clone())
+                .zip(20000..)
+                .map(|((name, admin), uid)| (name.clone(), Login { uid, admin: *admin }))
                 .collect())
         }
+        /// As mica-accounts: admin counts only when the account is made.
         fn add(&self, name: &str, admin: bool) -> Result<u32> {
             self.calls
                 .lock()
@@ -186,8 +185,21 @@ mod tests {
             self.accounts
                 .lock()
                 .unwrap()
-                .insert(name.to_string(), admin);
+                .entry(name.to_string())
+                .or_insert(admin);
             Ok(20000)
+        }
+        fn set_admin(&self, name: &str, admin: bool) -> Result<()> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("set-admin {name} {admin}"));
+            let mut accounts = self.accounts.lock().unwrap();
+            let entry = accounts
+                .get_mut(name)
+                .ok_or_else(|| anyhow::anyhow!("no {name}"))?;
+            *entry = admin;
+            Ok(())
         }
         fn remove(&self, name: &str) -> Result<()> {
             self.calls.lock().unwrap().push(format!("remove {name}"));
@@ -264,9 +276,12 @@ mod tests {
         let r = apply(&u, false, &paths, &stub).unwrap();
         assert_eq!(r.accounts_set, ["alice"]);
         assert!(r.keys_written.is_empty());
-        assert_eq!(stub.calls(), ["add alice false"]);
+        assert_eq!(stub.calls(), ["set-admin alice false"]);
+        assert!(!stub.list().unwrap()["alice"].admin);
+        assert_eq!(apply(&u, false, &paths, &stub).unwrap(), Report::default());
         apply(&u, true, &paths, &stub).unwrap();
-        assert_eq!(stub.calls(), ["add alice true"]);
+        assert_eq!(stub.calls(), ["set-admin alice true"]);
+        assert!(stub.list().unwrap()["alice"].admin);
     }
 
     #[test]

@@ -4,12 +4,12 @@
 // Tests and fixtures answer a broken expectation by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mica_gce_agent::accounts::Accounts;
+use mica_gce_agent::accounts::{Accounts, Login};
 use mica_gce_agent::apply::Paths;
 use mica_gce_agent::metadata::Client;
 use serde_json::{Value, json};
@@ -139,31 +139,46 @@ impl Fake {
     }
 }
 
-/// mica-accounts in memory: name -> admin.
+/// mica-accounts in memory: name -> admin; admin counts only when the
+/// account is made, as in mica-accounts.
 #[derive(Default)]
 struct Stub {
     accounts: Mutex<BTreeMap<String, bool>>,
 }
 
-impl Accounts for Stub {
-    fn list(&self) -> anyhow::Result<BTreeMap<String, u32>> {
-        let accounts = self.accounts.lock().unwrap();
-        Ok(accounts.keys().cloned().zip(20000..).collect())
+impl Stub {
+    fn admins(&self) -> usize {
+        self.accounts
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|a| **a)
+            .count()
     }
-    fn admins(&self) -> anyhow::Result<BTreeSet<String>> {
+}
+
+impl Accounts for Stub {
+    fn list(&self) -> anyhow::Result<BTreeMap<String, Login>> {
         let accounts = self.accounts.lock().unwrap();
         Ok(accounts
             .iter()
-            .filter(|(_, admin)| **admin)
-            .map(|(name, _)| name.clone())
+            .zip(20000..)
+            .map(|((name, admin), uid)| (name.clone(), Login { uid, admin: *admin }))
             .collect())
     }
     fn add(&self, name: &str, admin: bool) -> anyhow::Result<u32> {
         self.accounts
             .lock()
             .unwrap()
-            .insert(name.to_string(), admin);
+            .entry(name.to_string())
+            .or_insert(admin);
         Ok(20000)
+    }
+    fn set_admin(&self, name: &str, admin: bool) -> anyhow::Result<()> {
+        if let Some(entry) = self.accounts.lock().unwrap().get_mut(name) {
+            *entry = admin;
+        }
+        Ok(())
     }
     fn remove(&self, name: &str) -> anyhow::Result<()> {
         self.accounts.lock().unwrap().remove(name);
@@ -405,7 +420,7 @@ async fn the_admin_group_follows_micad_s_switch() {
     ))
     .await;
     let agent = Agent::start(address, false);
-    let admins = |agent: &Agent| agent.stub.admins().unwrap().len();
+    let admins = |agent: &Agent| agent.stub.admins();
     // No switch file: no grant.
     eventually("alice and bob", || names(&agent.keys()) == ["alice", "bob"]).await;
     assert_eq!(admins(&agent), 0);
