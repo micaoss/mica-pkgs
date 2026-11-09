@@ -193,6 +193,15 @@ ETag, `timeout_sec=60`). A failed request is retried after 1 s, doubling to 30 s
   a temporary file and a rename), holding the user's lines. The directory is in RAM and only the
   agent writes it: a user without keys has no file, and nothing is left from a previous boot.
   root's and mica's `~/.ssh/authorized_keys` are micad's and never touched.
+- **Host keys.** The public halves of mica-openssh's host keys,
+  `/mnt/data/state/ssh/ssh_host_{ed25519,rsa}_key.pub` (`--host-keys`), go to the guest
+  attributes as Google's guest agent writes them: `PUT
+  instance/guest-attributes/hostkeys/<type>` (`ssh-ed25519`, `ssh-rsa`) with the key's base64
+  field as the value, so gcloud and the console check the host key instead of trusting it on
+  first use. Once after start and then whenever a key or `enable-guest-attributes` (instance or
+  project) changes. A 403 or 404 means guest attributes are off: one log line, and nothing more
+  until `enable-guest-attributes` changes. Another failure is tried again on the next pass. No
+  private key is read, no other type and nothing else is written; a missing `.pub` is skipped.
 - **Not done.** The hostname (micad's), OS Login, metadata scripts and the network.
 
 What Base provides for it: the login class of `mica-accounts` and the group `mica-admins`, with
@@ -200,7 +209,7 @@ what that group may do; shadow entries `*`, not `!`, for login accounts, since O
 PAM refuses every login to `!`; the directory `/run/mica/authorized-keys` (root:root 0755); and
 mica-openssh's `AuthorizedKeysFile .ssh/authorized_keys /run/mica/authorized-keys/%u` for every
 user but root and mica, which keep only their own file (dropbear has no second key file, so a
-Compute Engine product uses mica-openssh). The service runs in the host's mount namespace,
+Compute Engine product uses mica-openssh); and the host keys' `.pub` files beside the keys. The service runs in the host's mount namespace,
 because mica-accounts binds its builds over `/etc/passwd` and `/etc/group`.
 
 ## 5. The repository

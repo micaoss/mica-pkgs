@@ -11,5 +11,5 @@ error_logger="logger -t mica-gce-agent -p daemon.warn"
 
 depend() {
     need mica-mounts
-    after net
+    after net mica-sshd
 }

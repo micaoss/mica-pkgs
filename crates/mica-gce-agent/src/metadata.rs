@@ -5,12 +5,14 @@
 //! server answers when the document changes or after `timeout_sec` seconds.
 //! Every request carries `Metadata-Flavor: Google`, and an answer without that
 //! header is not from the metadata server and is refused.
+//!
+//! The one write is `put`, for a guest attribute.
 
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::rt::TokioIo;
 use serde_json::Value;
@@ -20,6 +22,14 @@ pub const POLL_SECONDS: u64 = 60;
 
 /// Slack on top of the long poll before the request is abandoned.
 const SLACK: Duration = Duration::from_secs(10);
+
+/// What a guest attribute write came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Put {
+    Done,
+    /// 403 or 404: guest attributes are off for the instance.
+    Off,
+}
 
 /// The metadata server at one address.
 #[derive(Debug, Clone)]
@@ -65,7 +75,31 @@ impl Client {
             .with_context(|| format!("no answer from {} in {limit:?}", self.address))?
     }
 
-    async fn request(&self, path: &str) -> Result<Answer> {
+    /// Write `value` to the guest attribute at `path`.
+    pub async fn put(&self, path: &str, value: &str) -> Result<Put> {
+        let limit = SLACK;
+        let (status, _, body) = tokio::time::timeout(
+            limit,
+            self.send(hyper::Method::PUT, path, value.to_string()),
+        )
+        .await
+        .with_context(|| format!("no answer from {} in {limit:?}", self.address))??;
+        match status {
+            hyper::StatusCode::FORBIDDEN | hyper::StatusCode::NOT_FOUND => Ok(Put::Off),
+            status if status.is_success() => Ok(Put::Done),
+            status => bail!(
+                "the metadata server answered {status}: {}",
+                String::from_utf8_lossy(&body).trim()
+            ),
+        }
+    }
+
+    async fn send(
+        &self,
+        method: hyper::Method,
+        path: &str,
+        body: String,
+    ) -> Result<(hyper::StatusCode, hyper::HeaderMap, Bytes)> {
         let stream = tokio::net::TcpStream::connect(self.address)
             .await
             .with_context(|| format!("connecting to {}", self.address))?;
@@ -73,25 +107,27 @@ impl Client {
             hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
         tokio::spawn(conn);
         let request = hyper::Request::builder()
+            .method(method)
             .uri(path)
             .header(hyper::header::HOST, "metadata.google.internal")
             .header("Metadata-Flavor", "Google")
-            .body(Empty::<Bytes>::new())?;
+            .body(Full::new(Bytes::from(body)))?;
         let response = sender.send_request(request).await?;
         let status = response.status();
-        if response
-            .headers()
-            .get("Metadata-Flavor")
-            .is_none_or(|v| v != "Google")
-        {
+        let headers = response.headers().clone();
+        let body = response.into_body().collect().await?.to_bytes();
+        Ok((status, headers, body))
+    }
+
+    async fn request(&self, path: &str) -> Result<Answer> {
+        let (status, headers, body) = self.send(hyper::Method::GET, path, String::new()).await?;
+        if headers.get("Metadata-Flavor").is_none_or(|v| v != "Google") {
             bail!("the answer carries no `Metadata-Flavor: Google`");
         }
-        let etag = response
-            .headers()
+        let etag = headers
             .get(hyper::header::ETAG)
             .and_then(|v| v.to_str().ok())
             .map(str::to_string);
-        let body = response.into_body().collect().await?.to_bytes();
         if !status.is_success() {
             bail!(
                 "the metadata server answered {status}: {}",

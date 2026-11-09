@@ -6,10 +6,12 @@
 //! mica-accounts, which also makes the home on DATA) and the user's key file,
 //! which sshd reads as a second AuthorizedKeysFile for every user but root and
 //! mica. It never writes root's or mica's keys, which are micad's, and never
-//! the hostname.
+//! the hostname. Its one write to the metadata server is the instance's SSH
+//! host public keys, as guest attributes (`hostkeys`).
 
 pub mod accounts;
 pub mod apply;
+pub mod hostkeys;
 pub mod keys;
 pub mod metadata;
 
@@ -81,6 +83,7 @@ pub async fn run(
     shutdown: impl Future<Output = ()>,
 ) {
     tokio::pin!(shutdown);
+    let mut host_keys = hostkeys::Publisher::new(paths.host_keys.clone());
     let mut document: Option<Value> = None;
     let mut etag: Option<String> = None;
     let mut expiry = None;
@@ -121,6 +124,7 @@ pub async fn run(
                     tracing::error!("applying the metadata panicked: {err}");
                     None
                 });
+            host_keys.pass(&client, document).await;
         }
     }
 }

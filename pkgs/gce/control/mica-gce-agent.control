@@ -13,5 +13,7 @@ Description: Mica OS agent for SSH logins on Google Compute Engine
  key file in /run/mica/authorized-keys for each user they name, never root or
  mica, and removes both when the user's keys leave the metadata or expire; the
  home on DATA stays. Honours block-project-ssh-keys and enable-oslogin.
+ Publishes the SSH host public keys as hostkeys/ guest attributes, so gcloud
+ can check the host key.
  Carries a systemd unit and an OpenRC script and enables neither: a Compute
  Engine product enables it.

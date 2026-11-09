@@ -1,8 +1,9 @@
 [Unit]
 Description=mica GCE agent (SSH logins from Compute Engine metadata)
-After=network-online.target mica-accounts.service
+After=network-online.target mica-accounts.service mica-sshd.service
 Wants=network-online.target
-# mica-accounts makes the login accounts' homes on DATA.
+# mica-accounts makes the login accounts' homes on DATA; mica-sshd makes the
+# host keys whose public halves the agent publishes, so it usually goes first.
 RequiresMountsFor=/home
 
 [Service]

@@ -28,6 +28,9 @@ pub struct Paths {
     pub passwd: PathBuf,
     /// micad's grant switch for the admin group (`crate::admin_granted`).
     pub grant: PathBuf,
+    /// The SSH host keys' directory, whose `.pub` files `crate::hostkeys`
+    /// publishes.
+    pub host_keys: PathBuf,
 }
 
 /// What one pass did, for the log.
@@ -206,6 +209,7 @@ mod tests {
             keys: dir.path().join("run/authorized-keys"),
             passwd: dir.path().join("passwd"),
             grant: dir.path().join("cloud-admins"),
+            host_keys: dir.path().join("ssh"),
         };
         fs::write(
             &paths.passwd,

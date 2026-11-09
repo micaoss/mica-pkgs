@@ -26,6 +26,10 @@ struct Args {
     #[arg(long, default_value = "/run/mica/cloud-admins")]
     cloud_admins: PathBuf,
 
+    /// The SSH host keys; their `.pub` files go to the guest attributes.
+    #[arg(long, default_value = "/mnt/data/state/ssh")]
+    host_keys: PathBuf,
+
     /// Names here that are not login accounts are never used.
     #[arg(long, default_value = "/etc/passwd")]
     passwd: PathBuf,
@@ -52,6 +56,7 @@ async fn main() {
             keys: args.keys,
             passwd: args.passwd,
             grant: args.cloud_admins,
+            host_keys: args.host_keys,
         },
         Arc::new(Tool {
             path: args.accounts_tool,
