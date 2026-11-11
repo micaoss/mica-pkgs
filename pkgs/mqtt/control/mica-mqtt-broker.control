@@ -1,6 +1,6 @@
 Package: mica-mqtt-broker
-Version: 0.0.1-4
-Source-Date-Epoch: 1794096000
+Version: 0.0.1-5
+Source-Date-Epoch: 1794355200
 Architecture: @ARCH@
 Maintainer: mica build <mica@example.invalid>
 Section: admin
