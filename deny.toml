@@ -43,3 +43,9 @@ deny = [
 # Vulnerabilities are errors by default in the version-2 schema;
 # unmaintained advisories only warn.
 unmaintained = "all"
+ignore = [
+    # chrono: unmaintained, all versions, no fixed release. mica-gce-agent and
+    # mica-sftp-server use it directly, and russh-sftp through mica-sftp-server;
+    # the move to jiff is tracked in micaoss/mica-pkgs#1.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no fixed version; migration to jiff tracked in micaoss/mica-pkgs#1" },
+]
